@@ -11,7 +11,6 @@ from plotly.subplots import make_subplots
 import dash_bootstrap_components as dbc
 
 # --- Configuration ---
-# Remplacez avec votre nom d'utilisateur et nom de dépôt GitHub
 GITHUB_USER = "Alaricb21"
 GITHUB_REPO = "Precsix"
 
@@ -66,7 +65,6 @@ app.layout = dbc.Container([
 
 
 # --- Callbacks ---
-
 @app.callback(
     Output('dropdown-simulation', 'options'),
     Input('btn-refresh', 'n_clicks')
@@ -87,7 +85,6 @@ def update_graphs(simulation_filename):
         return html.Div("Impossible de charger les données de cette simulation.")
 
     df = pd.DataFrame(data['timeseries'])
-    
     num_axes = len(data['total_travel'])
     
     # Graphique des vitesses
@@ -97,18 +94,19 @@ def update_graphs(simulation_filename):
         shared_xaxes=True, 
         subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(num_axes)])
     )
-    
-    # Trace de la vitesse TCP
     fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP", mode='lines'), row=1, col=1)
-    
-    # Traces des vitesses des axes
     for i in range(num_axes):
         col_name = f'J{i+1}_Speed'
         if col_name in df.columns:
             fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df[col_name], name=f"Axe {i+1}", mode='lines'), row=i+2, col=1)
     
-    # MODIFIÉ : Le paramètre 'height' fixe qui causait le bug a été retiré
-    fig_vitesse.update_layout(showlegend=False, margin=dict(t=30, b=10))
+    # MODIFIÉ : On redonne une hauteur au graphique pour qu'il puisse s'afficher.
+    # Le conteneur parent s'occupera de limiter la taille visible et d'ajouter le défilement.
+    fig_vitesse.update_layout(
+        showlegend=False, 
+        margin=dict(t=40, b=20),
+        height=250 * (num_axes + 1) # On définit la hauteur totale du contenu
+    )
     
     # Graphique des cumuls
     total_travel_data = data['total_travel']
@@ -120,7 +118,6 @@ def update_graphs(simulation_filename):
     return html.Div([
         html.H2(f"Analyse de : {simulation_filename}", className="text-center"),
         html.Hr(),
-        # MODIFIÉ : La hauteur maximale a été augmentée pour plus de confort
         html.Div([dcc.Graph(figure=fig_vitesse)], style={'maxHeight': '80vh', 'overflowY': 'auto', 'border': '1px solid #ddd'}),
         html.Hr(),
         dcc.Graph(figure=fig_cumul, style={'height': '450px'})
