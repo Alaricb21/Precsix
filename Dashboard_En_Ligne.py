@@ -12,7 +12,7 @@ import dash_bootstrap_components as dbc
 
 # --- Configuration ---
 # Remplacez avec votre nom d'utilisateur et nom de dépôt GitHub
-GITHUB_USER = "Alaricb21"
+GITHUB_USER = "Alarich21"
 GITHUB_REPO = "Precsix"
 
 # --- Fonctions pour récupérer les données depuis GitHub ---
@@ -22,7 +22,6 @@ def get_simulation_list():
         api_url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/"
         response = requests.get(api_url)
         response.raise_for_status()
-        # On ne garde que les fichiers qui finissent par .json
         return [file['name'] for file in response.json() if file['name'].endswith('.json')]
     except Exception as e:
         print(f"Erreur en récupérant la liste des fichiers depuis GitHub: {e}")
@@ -31,7 +30,6 @@ def get_simulation_list():
 def load_simulation_data(filename):
     """Charge les données d'un fichier .json spécifique depuis GitHub."""
     try:
-        # URL brute du fichier
         raw_url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{filename}"
         response = requests.get(raw_url)
         response.raise_for_status()
@@ -42,28 +40,26 @@ def load_simulation_data(filename):
 
 # --- Création de l'application Dash ---
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-server = app.server # Nécessaire pour le déploiement sur Render
+server = app.server
 app.title = "Base de Données des Simulations Robot"
 
 app.layout = dbc.Container([
     dbc.Row(dbc.Col(html.H1("Analyseur de Simulations Robot"), width=12, className="text-center my-4")),
     
     dbc.Row([
-        # Colonne de gauche pour les contrôles
         dbc.Col([
             html.H4("Sélection de la Simulation"),
             dcc.Dropdown(
                 id='dropdown-simulation', 
-                options=get_simulation_list(), # On remplit la liste au démarrage
+                options=get_simulation_list(),
                 placeholder="Choisissez une simulation..."
             ),
             html.Br(),
             dbc.Button("Rafraîchir la liste", id='btn-refresh', color="info", className="w-100"),
         ], md=3, className="bg-light p-4 rounded"),
         
-        # Colonne de droite pour les graphiques
         dbc.Col([
-            html.Div(id='graph-container') # Un conteneur qui affichera les graphiques
+            html.Div(id='graph-container')
         ], md=9)
     ])
 ], fluid=True)
@@ -71,7 +67,6 @@ app.layout = dbc.Container([
 
 # --- Callbacks ---
 
-# Mettre à jour la liste du dropdown quand on clique sur le bouton rafraîchir
 @app.callback(
     Output('dropdown-simulation', 'options'),
     Input('btn-refresh', 'n_clicks')
@@ -79,7 +74,6 @@ app.layout = dbc.Container([
 def update_dropdown_list(n_clicks):
     return get_simulation_list()
 
-# Mettre à jour les graphiques quand on choisit une simulation dans le dropdown
 @app.callback(
     Output('graph-container', 'children'),
     Input('dropdown-simulation', 'value')
@@ -88,32 +82,46 @@ def update_graphs(simulation_filename):
     if not simulation_filename:
         return html.Div("Veuillez sélectionner une simulation à afficher.")
 
-    # Charger les données depuis GitHub
     data = load_simulation_data(simulation_filename)
     if not data:
         return html.Div("Impossible de charger les données de cette simulation.")
 
-    # Création des graphiques (code copié-collé et adapté de votre script précédent)
     df = pd.DataFrame(data['timeseries'])
     
+    num_axes = len(data['total_travel'])
+    
     # Graphique des vitesses
-    fig_vitesse = make_subplots(rows=len(data['total_travel']) + 1, cols=1, shared_xaxes=True, subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(len(data['total_travel']))]))
-    fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP"), row=1, col=1)
-    for i in range(len(data['total_travel'])):
-        fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df[f'J{i+1}_Speed'], name=f"Axe {i+1}"), row=i+2, col=1)
-    fig_vitesse.update_layout(showlegend=False, height=800)
+    fig_vitesse = make_subplots(
+        rows=num_axes + 1, 
+        cols=1, 
+        shared_xaxes=True, 
+        subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(num_axes)])
+    )
+    
+    # Trace de la vitesse TCP
+    fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP", mode='lines'), row=1, col=1)
+    
+    # Traces des vitesses des axes
+    for i in range(num_axes):
+        col_name = f'J{i+1}_Speed'
+        if col_name in df.columns:
+            fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df[col_name], name=f"Axe {i+1}", mode='lines'), row=i+2, col=1)
+    
+    # MODIFIÉ : Le paramètre 'height' fixe qui causait le bug a été retiré
+    fig_vitesse.update_layout(showlegend=False, margin=dict(t=30, b=10))
     
     # Graphique des cumuls
     total_travel_data = data['total_travel']
-    axis_labels = [f'Axe {i+1}' for i in range(len(total_travel_data))]
+    axis_labels = [f'Axe {i+1}' for i in range(num_axes)]
     fig_cumul = go.Figure(data=[go.Bar(x=axis_labels, y=total_travel_data, text=[f'{val:.1f}°' for val in total_travel_data], textposition='auto')])
     fig_cumul.update_layout(title_text="Déplacement Angulaire Total")
     
     # On retourne la mise en page des graphiques
     return html.Div([
-        html.H2(f"Analyse de : {simulation_filename}"),
+        html.H2(f"Analyse de : {simulation_filename}", className="text-center"),
         html.Hr(),
-        html.Div([dcc.Graph(figure=fig_vitesse)], style={'maxHeight': '65vh', 'overflowY': 'auto', 'border': '1px solid #ddd'}),
+        # MODIFIÉ : La hauteur maximale a été augmentée pour plus de confort
+        html.Div([dcc.Graph(figure=fig_vitesse)], style={'maxHeight': '80vh', 'overflowY': 'auto', 'border': '1px solid #ddd'}),
         html.Hr(),
         dcc.Graph(figure=fig_cumul, style={'height': '450px'})
     ])
