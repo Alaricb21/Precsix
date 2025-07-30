@@ -1,7 +1,1 @@
-# Ce qu'il vous faut:
-pandas
-dash
-dash-bootstrap-components
-plotly
-requests
-gunicorn
+
