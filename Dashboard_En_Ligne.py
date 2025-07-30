@@ -11,7 +11,7 @@ from plotly.subplots import make_subplots
 import dash_bootstrap_components as dbc
 
 # --- Configuration ---
-GITHUB_USER = "Alarich21"
+GITHUB_USER = "Alaricb21"
 GITHUB_REPO = "Precsix"
 
 # --- Fonctions pour récupérer les données depuis GitHub ---
