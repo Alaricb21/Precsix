@@ -12,7 +12,7 @@ import dash_bootstrap_components as dbc
 
 # --- Configuration ---
 # Remplacez avec votre nom d'utilisateur et nom de dépôt GitHub
-GITHUB_USER = "Alarich21"
+GITHUB_USER = "Alaricb21"
 GITHUB_REPO = "Precsix"
 
 # --- Fonctions pour récupérer les données depuis GitHub ---
