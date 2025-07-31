@@ -4,3 +4,4 @@ dash-bootstrap-components
 plotly
 requests
 gunicorn
+openpyxl
