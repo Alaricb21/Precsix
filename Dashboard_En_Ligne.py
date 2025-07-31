@@ -2,10 +2,11 @@
 
 import pandas as pd
 import json
-import requests # Pour lire les fichiers depuis GitHub
+import requests
+from io import BytesIO # NOUVEAU: Nécessaire pour créer le fichier en mémoire
 
 import dash
-from dash import dcc, html, Input, Output
+from dash import dcc, html, Input, Output, State # NOUVEAU: Ajout de State
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import dash_bootstrap_components as dbc
@@ -43,6 +44,9 @@ server = app.server
 app.title = "Base de Données des Simulations Robot"
 
 app.layout = dbc.Container([
+    # NOUVEAU: Composant invisible pour gérer le téléchargement
+    dcc.Download(id="download-excel"),
+    
     dbc.Row(dbc.Col(html.H1("Analyseur de Simulations Robot"), width=12, className="text-center my-4")),
     
     dbc.Row([
@@ -54,7 +58,11 @@ app.layout = dbc.Container([
                 placeholder="Choisissez une simulation..."
             ),
             html.Br(),
-            dbc.Button("Rafraîchir la liste", id='btn-refresh', color="info", className="w-100"),
+            dbc.Button("Rafraîchir la liste", id='btn-refresh', color="info", className="w-100 mb-3"),
+            
+            # NOUVEAU: Bouton pour l'export Excel
+            dbc.Button("Exporter en Excel", id='btn-export', color="success", className="w-100"),
+            
         ], md=3, className="bg-light p-4 rounded"),
         
         dbc.Col([
@@ -87,32 +95,29 @@ def update_graphs(simulation_filename):
     df = pd.DataFrame(data['timeseries'])
     num_axes = len(data['total_travel'])
     
-    # Graphique des vitesses
     fig_vitesse = make_subplots(
         rows=num_axes + 1, 
         cols=1, 
         shared_xaxes=True, 
         subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(num_axes)])
     )
-    
     fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP", mode='lines'), row=1, col=1)
     for i in range(num_axes):
-        fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df[f'J{i+1}_Speed'], name=f"Axe {i+1}", mode='lines'), row=i+2, col=1)
+        col_name = f'J{i+1}_Speed'
+        if col_name in df.columns:
+            fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df[col_name], name=f"Axe {i+1}", mode='lines'), row=i+2, col=1)
     
-    # MODIFIÉ : On calcule une hauteur dynamique pour donner de l'espace à chaque graphique
     fig_vitesse.update_layout(
         showlegend=False, 
-        height=(num_axes + 1) * 300,  # 200 pixels de hauteur par sous-graphique
-        margin=dict(t=30, l=40, r=20, b=20)
+        margin=dict(t=40, b=20),
+        height=250 * (num_axes + 1)
     )
     
-    # Graphique des cumuls
     total_travel_data = data['total_travel']
     axis_labels = [f'Axe {i+1}' for i in range(num_axes)]
     fig_cumul = go.Figure(data=[go.Bar(x=axis_labels, y=total_travel_data, text=[f'{val:.1f}°' for val in total_travel_data], textposition='auto')])
     fig_cumul.update_layout(title_text="Déplacement Angulaire Total")
     
-    # On retourne la mise en page des graphiques
     return html.Div([
         html.H2(f"Analyse de : {simulation_filename}", className="text-center"),
         html.Hr(),
@@ -120,6 +125,44 @@ def update_graphs(simulation_filename):
         html.Hr(),
         dcc.Graph(figure=fig_cumul, style={'height': '450px'})
     ])
+
+# NOUVEAU: Callback pour gérer l'export Excel
+@app.callback(
+    Output("download-excel", "data"),
+    Input("btn-export", "n_clicks"),
+    State("dropdown-simulation", "value"), # On récupère le nom du fichier sélectionné
+    prevent_initial_call=True,
+)
+def export_to_excel(n_clicks, simulation_filename):
+    if not simulation_filename:
+        # Ne rien faire si aucun fichier n'est sélectionné
+        return dash.no_update
+
+    # Charger les données du fichier sélectionné
+    data = load_simulation_data(simulation_filename)
+    if not data:
+        return dash.no_update
+
+    # Créer les deux DataFrames
+    df_vitesse = pd.DataFrame(data['timeseries'])
+    df_cumul = pd.DataFrame({
+        'Axe': [f'Axe {i+1}' for i in range(len(data['total_travel']))],
+        'Déplacement Total (degrés)': data['total_travel']
+    })
+
+    # Préparer et envoyer le fichier Excel
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_vitesse.to_excel(writer, sheet_name='Données de Vitesse', index=False)
+        df_cumul.to_excel(writer, sheet_name='Cumul par Axe', index=False)
+    
+    excel_data = output.getvalue()
+    
+    # Créer un nom de fichier propre
+    clean_filename = simulation_filename.replace(".json", "")
+    
+    return dcc.send_bytes(excel_data, f"analyse_{clean_filename}.xlsx")
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
