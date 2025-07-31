@@ -102,7 +102,7 @@ def update_graphs(simulation_filename):
     # MODIFIÉ : On calcule une hauteur dynamique pour donner de l'espace à chaque graphique
     fig_vitesse.update_layout(
         showlegend=False, 
-        height=(num_axes + 1) * 200,  # 200 pixels de hauteur par sous-graphique
+        height=(num_axes + 1) * 300,  # 200 pixels de hauteur par sous-graphique
         margin=dict(t=30, l=40, r=20, b=20)
     )
     
