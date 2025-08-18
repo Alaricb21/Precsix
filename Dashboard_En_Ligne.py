@@ -85,49 +85,38 @@ def update_graphs(simulation_filename):
         if 'tcp_positions' in data and data['tcp_positions']:
             path_data = np.array(data['tcp_positions'])
             
-            # --- CORRECTION DES LIAISONS ET DE LA LÉGENDE ---
+            # --- CORRECTION FINALE DU TRACÉ ET DE LA LÉGENDE ---
             if 'most_solicited_joint' in data and data['most_solicited_joint']:
                 most_solicited = np.array(data['most_solicited_joint'])
                 colors = px.colors.qualitative.Plotly
                 color_map = {i: colors[i % len(colors)] for i in range(num_joints)}
                 
-                # On ajoute une seule trace avec des "None" pour lier les segments
-                trace_x, trace_y, trace_z, trace_colors = [], [], [], []
-                
-                # On parcourt les points pour créer les segments
-                for i in range(len(most_solicited)):
-                    trace_x.append(path_data[i, 0])
-                    trace_y.append(path_data[i, 1])
-                    trace_z.append(path_data[i, 2])
-                    trace_colors.append(color_map.get(most_solicited[i], 'black'))
+                # On trouve les points où l'axe le plus sollicité change
+                change_indices = np.where(np.diff(most_solicited) != 0)[0] + 1
+                segment_indices = np.insert(change_indices, [0, len(change_indices)], [0, len(most_solicited)-1])
+
+                # On crée une trace pour chaque segment de couleur
+                for i in range(len(segment_indices) - 1):
+                    start_idx = segment_indices[i]
+                    end_idx = segment_indices[i+1]
+                    joint_idx = most_solicited[start_idx]
                     
-                    # Si le prochain point change de couleur, on insère un 'None' pour briser la ligne
-                    if i < len(most_solicited) - 1 and most_solicited[i] != most_solicited[i+1]:
-                        trace_x.append(None)
-                        trace_y.append(None)
-                        trace_z.append(None)
-                        trace_colors.append(None)
-
-                # On crée la trace principale avec une liste de couleurs
-                fig_path.add_trace(go.Scatter3d(
-                    x=trace_x, y=trace_y, z=trace_z,
-                    mode='lines',
-                    line=dict(color=trace_colors, width=4),
-                    name="Trajectoire de l'outil",
-                    showlegend=False # On cache la légende de cette trace
-                ))
-
-                # On ajoute des traces "fantômes" pour la légende
-                for joint_index, color in color_map.items():
+                    # On s'assure d'inclure le point de fin du segment
+                    end_idx = end_idx + 1 if end_idx < len(most_solicited) - 1 else end_idx
+                    
+                    segment_x = path_data[start_idx:end_idx, 0]
+                    segment_y = path_data[start_idx:end_idx, 1]
+                    segment_z = path_data[start_idx:end_idx, 2]
+                    
                     fig_path.add_trace(go.Scatter3d(
-                        x=[None], y=[None], z=[None],
-                        mode='markers', # On utilise des marqueurs invisibles
-                        marker=dict(color=color),
-                        name=f"Axe {joint_index + 1}",
+                        x=segment_x, y=segment_y, z=segment_z,
+                        mode='lines',
+                        line=dict(color=color_map.get(joint_idx, 'black'), width=4),
+                        name=f"Axe {joint_idx + 1}",
                         showlegend=True
                     ))
             else:
-                # --- SI PAS DE DONNÉES DE COULEUR ---
+                # Si pas de données de sollicitation, le tracé est en une seule couleur
                 path_data = np.array(data['tcp_positions'])
                 fig_path.add_trace(go.Scatter3d(
                     x=path_data[:, 0],
