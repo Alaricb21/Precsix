@@ -10,7 +10,6 @@ from dash import dcc, html, Input, Output
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import dash_bootstrap_components as dbc
-import plotly.express as px
 
 # --- Configuration ---
 GITHUB_USER = "Alaricb21"
@@ -92,28 +91,49 @@ def update_graphs(simulation_filename):
         if 'tcp_positions' in data and data['tcp_positions'] and 'most_solicited_joint' in data:
             path_data = np.array(data['tcp_positions'])
             most_solicited = np.array(data['most_solicited_joint'])
-            
-            # --- MODIFICATION CLÉ POUR LES COULEURS ---
-            # Crée une liste de couleurs pour chaque axe (facile à lire)
-            colors_for_axes = px.colors.qualitative.Plotly
-            color_map = [colors_for_axes[i] for i in range(len(data['total_travel']))]
 
-            # Crée un trace pour le graphique 3D
-            fig_path = go.Figure(data=[go.Scatter3d(x=path_data[:, 0], y=path_data[:, 1], z=path_data[:, 2],
-                                                     mode='lines',
-                                                     name="Trajectoire de l'outil",
-                                                     line=dict(
-                                                         color=most_solicited,
-                                                         colorscale=color_map,
-                                                         showscale=True,
-                                                         colorbar=dict(
-                                                             title="Axe le plus sollicité",
-                                                             tickmode='array',
-                                                             tickvals=np.arange(len(data['total_travel'])),
-                                                             ticktext=[f"Axe {i+1}" for i in range(len(data['total_travel']))]
-                                                         )
-                                                     ))])
+            fig_path = go.Figure()
+
+            # --- DÉBUT DE LA NOUVELLE MÉTHODE POUR LA COULEUR ---
             
+            # Définition des couleurs pour chaque axe
+            colors_map = {
+                0: 'blue',
+                1: 'red',
+                2: 'green',
+                3: 'orange',
+                4: 'purple',
+                5: 'brown'
+            }
+            
+            # On trouve les points où l'axe le plus sollicité change
+            change_indices = np.where(np.diff(most_solicited) != 0)[0] + 1
+            split_indices = np.insert(change_indices, [0, len(change_indices)], [0, len(most_solicited)])
+            
+            for i in range(len(split_indices) - 1):
+                start_index = split_indices[i]
+                end_index = split_indices[i+1]
+                
+                # On s'assure d'inclure les points de transition
+                if i < len(split_indices) - 2:
+                    end_index += 1
+                
+                segment_data = path_data[start_index:end_index]
+                joint_index = most_solicited[start_index]
+                
+                # On ajoute un trace pour chaque segment
+                fig_path.add_trace(go.Scatter3d(
+                    x=segment_data[:, 0],
+                    y=segment_data[:, 1],
+                    z=segment_data[:, 2],
+                    mode='lines',
+                    line=dict(color=colors_map.get(joint_index, 'black'), width=4),
+                    name=f"Axe {joint_index + 1}",
+                    showlegend=True
+                ))
+
+            # --- FIN DE LA NOUVELLE MÉTHODE ---
+
             fig_path.update_layout(
                 title_text="Trajectoire 3D du robot",
                 scene=dict(xaxis_title='Axe X (mm)', yaxis_title='Axe Y (mm)', zaxis_title='Axe Z (mm)')
