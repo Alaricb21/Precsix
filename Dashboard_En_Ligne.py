@@ -12,8 +12,8 @@ import dash_bootstrap_components as dbc
 
 # --- Configuration ---
 # Remplacez avec votre nom d'utilisateur et nom de dépôt GitHub
-GITHUB_USER = "VOTRE_NOM_UTILISATEUR"
-GITHUB_REPO = "VOTRE_NOM_DE_DEPOT"
+GITHUB_USER = "Alaricb21"
+GITHUB_REPO = "Precsix"
 
 # --- Fonctions pour récupérer les données depuis GitHub ---
 def get_simulation_list():
