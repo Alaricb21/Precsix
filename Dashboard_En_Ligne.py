@@ -10,12 +10,11 @@ from dash import dcc, html, Input, Output
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import dash_bootstrap_components as dbc
+import plotly.express as px
 
 # --- Configuration ---
-# REMPLACEZ AVEC VOTRE NOM D'UTILISATEUR ET NOM DE DÉPÔT GITHUB
 GITHUB_USER = "Alaricb21"
 GITHUB_REPO = "Precsix"
-# NOTE : Vérifiez si votre branche principale est "main" ou "master"
 GITHUB_BRANCH = "main"
 
 # --- Fonctions pour récupérer les données depuis GitHub ---
@@ -33,7 +32,6 @@ def get_simulation_list():
 def load_simulation_data(filename):
     """Charge les données d'un fichier .json spécifique depuis GitHub."""
     try:
-        # URL brute du fichier
         raw_url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
         response = requests.get(raw_url)
         response.raise_for_status()
@@ -66,7 +64,6 @@ app.layout = dbc.Container([
     ])
 ], fluid=True)
 
-
 # --- Callbacks ---
 
 @app.callback(
@@ -95,31 +92,28 @@ def update_graphs(simulation_filename):
         if 'tcp_positions' in data and data['tcp_positions'] and 'most_solicited_joint' in data:
             path_data = np.array(data['tcp_positions'])
             most_solicited = np.array(data['most_solicited_joint'])
+            
+            # --- MODIFICATION CLÉ POUR LES COULEURS ---
+            # Crée une liste de couleurs pour chaque axe (facile à lire)
+            colors_for_axes = px.colors.qualitative.Plotly
+            color_map = [colors_for_axes[i] for i in range(len(data['total_travel']))]
 
-            # --- NOUVEAUTÉ : Définition des couleurs pour chaque axe ---
-            # Liste des couleurs pour chaque axe (vous pouvez les changer)
-            colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
-            # Création du baromètre de couleurs
-            color_scale = [[0.0, colors[0]], [0.2, colors[0]], [0.2, colors[1]], [0.4, colors[1]], [0.4, colors[2]], [0.6, colors[2]], [0.6, colors[3]], [0.8, colors[3]], [0.8, colors[4]], [1.0, colors[4]]]
-            if len(data['total_travel']) > 5:
-                color_scale.extend([[1.0, colors[5]], [1.2, colors[5]]])
-
+            # Crée un trace pour le graphique 3D
             fig_path = go.Figure(data=[go.Scatter3d(x=path_data[:, 0], y=path_data[:, 1], z=path_data[:, 2],
-                                                     mode='lines', name="Trajectoire de l'outil",
-                                                     # --- DÉBUT DE LA MODIFICATION POUR LA COULEUR PAR AXE ---
+                                                     mode='lines',
+                                                     name="Trajectoire de l'outil",
                                                      line=dict(
-                                                         color=most_solicited, # L'indice de l'axe le plus sollicité
-                                                         colorscale=color_scale,
-                                                         cmin=-0.5,
-                                                         cmax=len(data['total_travel']) - 0.5,
+                                                         color=most_solicited,
+                                                         colorscale=color_map,
+                                                         showscale=True,
                                                          colorbar=dict(
                                                              title="Axe le plus sollicité",
+                                                             tickmode='array',
                                                              tickvals=np.arange(len(data['total_travel'])),
                                                              ticktext=[f"Axe {i+1}" for i in range(len(data['total_travel']))]
                                                          )
-                                                     )
-                                                     # --- FIN DE LA MODIFICATION POUR LA COULEUR PAR AXE ---
-                                                     )])
+                                                     ))])
+            
             fig_path.update_layout(
                 title_text="Trajectoire 3D du robot",
                 scene=dict(xaxis_title='Axe X (mm)', yaxis_title='Axe Y (mm)', zaxis_title='Axe Z (mm)')
