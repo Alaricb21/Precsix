@@ -11,7 +11,6 @@ from plotly.subplots import make_subplots
 import dash_bootstrap_components as dbc
 
 # --- Configuration ---
-# Remplacez avec votre nom d'utilisateur et nom de dépôt GitHub
 GITHUB_USER = "Alaricb21"
 GITHUB_REPO = "Precsix"
 
@@ -22,7 +21,6 @@ def get_simulation_list():
         api_url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/"
         response = requests.get(api_url)
         response.raise_for_status()
-        # On ne garde que les fichiers qui finissent par .json
         return [file['name'] for file in response.json() if file['name'].endswith('.json')]
     except Exception as e:
         print(f"Erreur en récupérant la liste des fichiers depuis GitHub: {e}")
@@ -31,7 +29,6 @@ def get_simulation_list():
 def load_simulation_data(filename):
     """Charge les données d'un fichier .json spécifique depuis GitHub."""
     try:
-        # URL brute du fichier
         raw_url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{filename}"
         response = requests.get(raw_url)
         response.raise_for_status()
@@ -42,28 +39,26 @@ def load_simulation_data(filename):
 
 # --- Création de l'application Dash ---
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-server = app.server # Nécessaire pour le déploiement sur Render
+server = app.server
 app.title = "Base de Données des Simulations Robot"
 
 app.layout = dbc.Container([
     dbc.Row(dbc.Col(html.H1("Analyseur de Simulations Robot"), width=12, className="text-center my-4")),
     
     dbc.Row([
-        # Colonne de gauche pour les contrôles
         dbc.Col([
             html.H4("Sélection de la Simulation"),
             dcc.Dropdown(
                 id='dropdown-simulation', 
-                options=get_simulation_list(), # On remplit la liste au démarrage
+                options=get_simulation_list(),
                 placeholder="Choisissez une simulation..."
             ),
             html.Br(),
             dbc.Button("Rafraîchir la liste", id='btn-refresh', color="info", className="w-100"),
         ], md=3, className="bg-light p-4 rounded"),
         
-        # Colonne de droite pour les graphiques
         dbc.Col([
-            html.Div(id='graph-container') # Un conteneur qui affichera les graphiques
+            html.Div(id='graph-container')
         ], md=9)
     ])
 ], fluid=True)
@@ -71,7 +66,6 @@ app.layout = dbc.Container([
 
 # --- Callbacks ---
 
-# Mettre à jour la liste du dropdown quand on clique sur le bouton rafraîchir
 @app.callback(
     Output('dropdown-simulation', 'options'),
     Input('btn-refresh', 'n_clicks')
@@ -79,7 +73,6 @@ app.layout = dbc.Container([
 def update_dropdown_list(n_clicks):
     return get_simulation_list()
 
-# Mettre à jour les graphiques quand on choisit une simulation dans le dropdown
 @app.callback(
     Output('graph-container', 'children'),
     Input('dropdown-simulation', 'value')
@@ -88,27 +81,33 @@ def update_graphs(simulation_filename):
     if not simulation_filename:
         return html.Div("Veuillez sélectionner une simulation à afficher.")
 
-    # Charger les données depuis GitHub
     data = load_simulation_data(simulation_filename)
     if not data:
         return html.Div("Impossible de charger les données de cette simulation.")
 
-    # Création des graphiques
     df = pd.DataFrame(data['timeseries'])
     
-    # Graphique de la trajectoire 3D
-    # *** NOUVEAUTÉ : On crée un graphique 3D de la trajectoire ***
-    path_data = np.array(data['tcp_positions'])
-    fig_path = go.Figure(data=[go.Scatter3d(x=path_data[:, 0], y=path_data[:, 1], z=path_data[:, 2],
-                                             mode='lines', name="Trajectoire de l'outil")])
-    fig_path.update_layout(
-        title_text="Trajectoire 3D du robot",
-        scene=dict(
-            xaxis_title='Axe X (mm)',
-            yaxis_title='Axe Y (mm)',
-            zaxis_title='Axe Z (mm)'
+    # --- NOUVEAUTÉ : Vérification de la présence de la clé ---
+    fig_path = None
+    if 'tcp_positions' in data:
+        path_data = np.array(data['tcp_positions'])
+        fig_path = go.Figure(data=[go.Scatter3d(x=path_data[:, 0], y=path_data[:, 1], z=path_data[:, 2],
+                                                 mode='lines', name="Trajectoire de l'outil")])
+        fig_path.update_layout(
+            title_text="Trajectoire 3D du robot",
+            scene=dict(
+                xaxis_title='Axe X (mm)',
+                yaxis_title='Axe Y (mm)',
+                zaxis_title='Axe Z (mm)'
+            )
         )
-    )
+    else:
+        fig_path = go.Figure().add_annotation(text="Pas de données de tracé 3D pour cette simulation.", showarrow=False)
+        fig_path.update_layout(
+            title_text="Trajectoire 3D du robot",
+            height=600
+        )
+    # --- FIN DE LA VÉRIFICATION ---
     
     # Graphique des vitesses
     fig_vitesse = make_subplots(rows=len(data['total_travel']) + 1, cols=1, shared_xaxes=True, subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(len(data['total_travel']))]))
@@ -123,8 +122,6 @@ def update_graphs(simulation_filename):
     fig_cumul = go.Figure(data=[go.Bar(x=axis_labels, y=total_travel_data, text=[f'{val:.1f}°' for val in total_travel_data], textposition='auto')])
     fig_cumul.update_layout(title_text="Déplacement Angulaire Total")
     
-    # On retourne la mise en page des graphiques
-    # *** NOUVEAUTÉ : On ajoute le graphique 3D à la mise en page ***
     return html.Div([
         html.H2(f"Analyse de : {simulation_filename}"),
         html.Hr(),
