@@ -10,6 +10,7 @@ from dash import dcc, html, Input, Output
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import dash_bootstrap_components as dbc
+import plotly.express as px
 
 # --- Configuration ---
 GITHUB_USER = "Alaricb21"
@@ -84,6 +85,7 @@ def update_graphs(simulation_filename):
     if data is None:
         return html.Div("❌ Erreur : Impossible de charger le fichier de simulation. Le fichier est peut-être absent ou corrompu.")
     
+    # On met tout le traitement dans un bloc try/except pour afficher les erreurs
     try:
         df = pd.DataFrame(data['timeseries'])
         
@@ -93,47 +95,39 @@ def update_graphs(simulation_filename):
             most_solicited = np.array(data['most_solicited_joint'])
 
             fig_path = go.Figure()
+            
+            # --- NOUVELLE LOGIQUE DE TRACÉ POUR PLUS DE ROBUSTESSE ---
+            
+            # On définit une carte de couleurs
+            num_joints = len(data['total_travel'])
+            colors = px.colors.qualitative.Plotly
+            color_map = {i: colors[i % len(colors)] for i in range(num_joints)}
 
-            # --- DÉBUT DE LA NOUVELLE MÉTHODE POUR LA COULEUR ---
-            
-            # Définition des couleurs pour chaque axe
-            colors_map = {
-                0: 'blue',
-                1: 'red',
-                2: 'green',
-                3: 'orange',
-                4: 'purple',
-                5: 'brown'
-            }
-            
             # On trouve les points où l'axe le plus sollicité change
-            change_indices = np.where(np.diff(most_solicited) != 0)[0] + 1
-            split_indices = np.insert(change_indices, [0, len(change_indices)], [0, len(most_solicited)])
+            unique_solicited = np.unique(most_solicited)
+            for joint_index in unique_solicited:
+                segment_indices = np.where(most_solicited == joint_index)[0]
+                if len(segment_indices) > 0:
+                    # On identifie les segments continus
+                    diff_indices = np.where(np.diff(segment_indices) != 1)[0]
+                    segment_starts = np.insert(diff_indices + 1, 0, 0)
+                    segment_ends = np.append(diff_indices, len(segment_indices) - 1)
+                    
+                    for start, end in zip(segment_starts, segment_ends):
+                        segment = segment_indices[start:end+1]
+                        
+                        fig_path.add_trace(go.Scatter3d(
+                            x=path_data[segment, 0],
+                            y=path_data[segment, 1],
+                            z=path_data[segment, 2],
+                            mode='lines',
+                            line=dict(color=color_map.get(joint_index, 'black'), width=4),
+                            name=f"Axe {joint_index + 1}",
+                            showlegend=True
+                        ))
             
-            for i in range(len(split_indices) - 1):
-                start_index = split_indices[i]
-                end_index = split_indices[i+1]
-                
-                # On s'assure d'inclure les points de transition
-                if i < len(split_indices) - 2:
-                    end_index += 1
-                
-                segment_data = path_data[start_index:end_index]
-                joint_index = most_solicited[start_index]
-                
-                # On ajoute un trace pour chaque segment
-                fig_path.add_trace(go.Scatter3d(
-                    x=segment_data[:, 0],
-                    y=segment_data[:, 1],
-                    z=segment_data[:, 2],
-                    mode='lines',
-                    line=dict(color=colors_map.get(joint_index, 'black'), width=4),
-                    name=f"Axe {joint_index + 1}",
-                    showlegend=True
-                ))
-
-            # --- FIN DE LA NOUVELLE MÉTHODE ---
-
+            # --- FIN DE LA NOUVELLE LOGIQUE ---
+            
             fig_path.update_layout(
                 title_text="Trajectoire 3D du robot",
                 scene=dict(xaxis_title='Axe X (mm)', yaxis_title='Axe Y (mm)', zaxis_title='Axe Z (mm)')
@@ -142,10 +136,18 @@ def update_graphs(simulation_filename):
             fig_path = go.Figure().add_annotation(text="Pas de données de tracé 3D pour cette simulation.", showarrow=False)
             fig_path.update_layout(title_text="Trajectoire 3D du robot", height=600)
         
-        fig_vitesse = make_subplots(rows=len(data['total_travel']) + 1, cols=1, shared_xaxes=True, subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(len(data['total_travel']))]))
+        # --- NOUVELLE LOGIQUE POUR LES VITESSES, PLUS ROBUSTE ---
+        fig_vitesse = make_subplots(
+            rows=len(data['total_travel']) + 1, 
+            cols=1, 
+            shared_xaxes=True, 
+            subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(len(data['total_travel']))])
+        )
+        
         fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP"), row=1, col=1)
         for i in range(len(data['total_travel'])):
             fig_vitesse.add_trace(go.Scatter(x=df['Time'], y=df[f'J{i+1}_Speed'], name=f"Axe {i+1}"), row=i+2, col=1)
+        
         fig_vitesse.update_layout(showlegend=False, height=800)
         
         total_travel_data = data['total_travel']
