@@ -95,6 +95,9 @@ def update_graphs(simulation_filename):
                 change_indices = np.where(np.diff(most_solicited) != 0)[0] + 1
                 segment_indices = np.insert(change_indices, [0, len(change_indices)], [0, len(most_solicited)-1])
 
+                # On garde une trace des légendes déjà affichées
+                legend_shown = set()
+
                 # On crée une trace pour chaque segment de couleur
                 for i in range(len(segment_indices) - 1):
                     start_idx = segment_indices[i]
@@ -108,12 +111,16 @@ def update_graphs(simulation_filename):
                     segment_y = path_data[start_idx:end_idx, 1]
                     segment_z = path_data[start_idx:end_idx, 2]
                     
+                    # On vérifie si la légende pour cet axe a déjà été affichée
+                    show_legend = joint_idx not in legend_shown
+                    legend_shown.add(joint_idx)
+                    
                     fig_path.add_trace(go.Scatter3d(
                         x=segment_x, y=segment_y, z=segment_z,
                         mode='lines',
                         line=dict(color=color_map.get(joint_idx, 'black'), width=4),
                         name=f"Axe {joint_idx + 1}",
-                        showlegend=True
+                        showlegend=show_legend # Cette ligne a été modifiée
                     ))
             else:
                 # Si pas de données de sollicitation, le tracé est en une seule couleur
