@@ -83,35 +83,49 @@ def update_graphs(simulation_filename):
         # --- GRAPH A : Tracé 3D du robot (avec couleurs et proportions fixes) ---
         fig_path = go.Figure()
         if 'tcp_positions' in data and data['tcp_positions']:
+            path_data = np.array(data['tcp_positions'])
             
-            # --- CORRECTION POUR LES COULEURS ---
+            # --- CORRECTION DES LIAISONS ET DE LA LÉGENDE ---
             if 'most_solicited_joint' in data and data['most_solicited_joint']:
-                path_data = np.array(data['tcp_positions'])
                 most_solicited = np.array(data['most_solicited_joint'])
-                
                 colors = px.colors.qualitative.Plotly
                 color_map = {i: colors[i % len(colors)] for i in range(num_joints)}
                 
-                unique_solicited = np.unique(most_solicited)
-                for joint_index in unique_solicited:
-                    segment_indices = np.where(most_solicited == joint_index)[0]
-                    if len(segment_indices) > 0:
-                        diff_indices = np.where(np.diff(segment_indices) != 1)[0]
-                        segment_starts = np.insert(diff_indices + 1, 0, 0)
-                        segment_ends = np.append(diff_indices, len(segment_indices) - 1)
-                        
-                        for start, end in zip(segment_starts, segment_ends):
-                            segment = segment_indices[start:end+1]
-                            
-                            fig_path.add_trace(go.Scatter3d(
-                                x=path_data[segment, 0],
-                                y=path_data[segment, 1],
-                                z=path_data[segment, 2],
-                                mode='lines',
-                                line=dict(color=color_map.get(joint_index, 'black'), width=4),
-                                name=f"Axe {joint_index + 1}",
-                                showlegend=True
-                            ))
+                # On ajoute une seule trace avec des "None" pour lier les segments
+                trace_x, trace_y, trace_z, trace_colors = [], [], [], []
+                
+                # On parcourt les points pour créer les segments
+                for i in range(len(most_solicited)):
+                    trace_x.append(path_data[i, 0])
+                    trace_y.append(path_data[i, 1])
+                    trace_z.append(path_data[i, 2])
+                    trace_colors.append(color_map.get(most_solicited[i], 'black'))
+                    
+                    # Si le prochain point change de couleur, on insère un 'None' pour briser la ligne
+                    if i < len(most_solicited) - 1 and most_solicited[i] != most_solicited[i+1]:
+                        trace_x.append(None)
+                        trace_y.append(None)
+                        trace_z.append(None)
+                        trace_colors.append(None)
+
+                # On crée la trace principale avec une liste de couleurs
+                fig_path.add_trace(go.Scatter3d(
+                    x=trace_x, y=trace_y, z=trace_z,
+                    mode='lines',
+                    line=dict(color=trace_colors, width=4),
+                    name="Trajectoire de l'outil",
+                    showlegend=False # On cache la légende de cette trace
+                ))
+
+                # On ajoute des traces "fantômes" pour la légende
+                for joint_index, color in color_map.items():
+                    fig_path.add_trace(go.Scatter3d(
+                        x=[None], y=[None], z=[None],
+                        mode='markers', # On utilise des marqueurs invisibles
+                        marker=dict(color=color),
+                        name=f"Axe {joint_index + 1}",
+                        showlegend=True
+                    ))
             else:
                 # --- SI PAS DE DONNÉES DE COULEUR ---
                 path_data = np.array(data['tcp_positions'])
@@ -124,14 +138,14 @@ def update_graphs(simulation_filename):
                     name="Trajectoire de l'outil"
                 ))
             
-            # --- CORRECTION POUR LE FORMAT "RATATINÉ" ---
+            # Correction pour le format "ratatiné"
             fig_path.update_layout(
                 title_text="Trajectoire 3D du robot",
                 scene=dict(
                     xaxis_title='Axe X (mm)', 
                     yaxis_title='Axe Y (mm)', 
                     zaxis_title='Axe Z (mm)',
-                    aspectmode='data' # C'est la ligne qui corrige la proportion
+                    aspectmode='data'
                 )
             )
         else:
