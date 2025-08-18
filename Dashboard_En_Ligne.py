@@ -80,21 +80,59 @@ def update_graphs(simulation_filename):
         df = pd.DataFrame(data['timeseries'])
         num_joints = len(data.get('total_travel', []))
 
-        # --- GRAPH A : Tracé 3D du robot (couleur unie) ---
+        # --- GRAPH A : Tracé 3D du robot (avec couleurs et proportions fixes) ---
         fig_path = go.Figure()
         if 'tcp_positions' in data and data['tcp_positions']:
-            path_data = np.array(data['tcp_positions'])
-            fig_path.add_trace(go.Scatter3d(
-                x=path_data[:, 0],
-                y=path_data[:, 1],
-                z=path_data[:, 2],
-                mode='lines',
-                line=dict(color='blue', width=4),
-                name="Trajectoire de l'outil"
-            ))
+            
+            # --- CORRECTION POUR LES COULEURS ---
+            if 'most_solicited_joint' in data and data['most_solicited_joint']:
+                path_data = np.array(data['tcp_positions'])
+                most_solicited = np.array(data['most_solicited_joint'])
+                
+                colors = px.colors.qualitative.Plotly
+                color_map = {i: colors[i % len(colors)] for i in range(num_joints)}
+                
+                unique_solicited = np.unique(most_solicited)
+                for joint_index in unique_solicited:
+                    segment_indices = np.where(most_solicited == joint_index)[0]
+                    if len(segment_indices) > 0:
+                        diff_indices = np.where(np.diff(segment_indices) != 1)[0]
+                        segment_starts = np.insert(diff_indices + 1, 0, 0)
+                        segment_ends = np.append(diff_indices, len(segment_indices) - 1)
+                        
+                        for start, end in zip(segment_starts, segment_ends):
+                            segment = segment_indices[start:end+1]
+                            
+                            fig_path.add_trace(go.Scatter3d(
+                                x=path_data[segment, 0],
+                                y=path_data[segment, 1],
+                                z=path_data[segment, 2],
+                                mode='lines',
+                                line=dict(color=color_map.get(joint_index, 'black'), width=4),
+                                name=f"Axe {joint_index + 1}",
+                                showlegend=True
+                            ))
+            else:
+                # --- SI PAS DE DONNÉES DE COULEUR ---
+                path_data = np.array(data['tcp_positions'])
+                fig_path.add_trace(go.Scatter3d(
+                    x=path_data[:, 0],
+                    y=path_data[:, 1],
+                    z=path_data[:, 2],
+                    mode='lines',
+                    line=dict(color='blue', width=4),
+                    name="Trajectoire de l'outil"
+                ))
+            
+            # --- CORRECTION POUR LE FORMAT "RATATINÉ" ---
             fig_path.update_layout(
                 title_text="Trajectoire 3D du robot",
-                scene=dict(xaxis_title='Axe X (mm)', yaxis_title='Axe Y (mm)', zaxis_title='Axe Z (mm)')
+                scene=dict(
+                    xaxis_title='Axe X (mm)', 
+                    yaxis_title='Axe Y (mm)', 
+                    zaxis_title='Axe Z (mm)',
+                    aspectmode='data' # C'est la ligne qui corrige la proportion
+                )
             )
         else:
             fig_path.add_annotation(text="Pas de données de tracé 3D pour cette simulation.", showarrow=False)
