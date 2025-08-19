@@ -16,6 +16,7 @@ GITHUB_USER = "Alaricb21"
 GITHUB_REPO = "Precsix"
 GITHUB_BRANCH = "main"
 
+# Fonction pour obtenir une couleur en fonction de la vitesse
 def get_color_from_speed_list(speeds):
     colors = []
     for speed in speeds:
@@ -95,7 +96,7 @@ def update_graphs(simulation_filename):
         df = pd.DataFrame(data['timeseries'])
         num_joints = len(data.get('total_travel', []))
 
-        # --- GRAPH A : Tracé 3D coloré par l'axe sollicité ---
+        # --- GRAPH A : Tracé 3D coloré par l'axe sollicité (avec survol) ---
         fig_sollicitation = go.Figure()
         if 'tcp_positions' in data and data['tcp_positions'] and 'most_solicited_joint' in data and data['most_solicited_joint']:
             path_data = np.array(data['tcp_positions'])
@@ -117,13 +118,21 @@ def update_graphs(simulation_filename):
                 segment_z = path_data[start_idx:end_idx, 2]
                 show_legend = joint_idx not in legend_shown
                 legend_shown.add(joint_idx)
+
+                # NOUVEAU : Création des informations de survol
+                hover_texts = [
+                    f"X: {x:.2f} mm<br>Y: {y:.2f} mm<br>Z: {z:.2f} mm<br>Vitesse: {vitesse:.2f} mm/s"
+                    for x, y, z, vitesse in zip(segment_x, segment_y, segment_z, df['TCP_Speed'][start_idx:end_idx])
+                ]
                 
                 fig_sollicitation.add_trace(go.Scatter3d(
                     x=segment_x, y=segment_y, z=segment_z,
                     mode='lines',
                     line=dict(color=color_map.get(joint_idx, 'black'), width=4),
                     name=f"Axe {joint_idx + 1}",
-                    showlegend=show_legend
+                    showlegend=show_legend,
+                    hoverinfo="text",
+                    hovertext=hover_texts
                 ))
             
             fig_sollicitation.update_layout(
@@ -139,12 +148,18 @@ def update_graphs(simulation_filename):
             fig_sollicitation.add_annotation(text="Pas de données de sollicitation d'axe pour cette simulation.", showarrow=False)
             fig_sollicitation.update_layout(title_text="Tracé 3D par axe sollicité", height=600)
 
-        # --- GRAPH B : Tracé 3D coloré par la vitesse ---
+        # --- GRAPH B : Tracé 3D coloré par la vitesse (avec survol et légende) ---
         fig_vitesse_3d = go.Figure()
         if 'tcp_positions' in data and data['tcp_positions'] and 'timeseries' in data and data['timeseries']:
             path_data = np.array(data['tcp_positions'])
             tcp_speeds = df['TCP_Speed']
             colors = get_color_from_speed_list(tcp_speeds)
+            
+            # NOUVEAU : Création des informations de survol
+            hover_texts = [
+                f"X: {x:.2f} mm<br>Y: {y:.2f} mm<br>Z: {z:.2f} mm<br>Vitesse: {vitesse:.2f} mm/s"
+                for x, y, z, vitesse in zip(path_data[:, 0], path_data[:, 1], path_data[:, 2], tcp_speeds)
+            ]
 
             fig_vitesse_3d.add_trace(go.Scatter3d(
                 x=path_data[:, 0],
@@ -153,26 +168,28 @@ def update_graphs(simulation_filename):
                 mode='lines',
                 line=dict(
                     color=colors,
-                    width=4,
-                    # NOUVEAU : Ajout de la barre de couleur
-                    colorscale=[
-                        [0.0, 'rgba(0, 0, 255, 1)'],
-                        [0.000001, 'rgba(0, 179, 255, 1)'],
-                        [0.000002, 'rgba(0, 255, 0, 1)'],
-                        [0.000003, 'rgba(255, 255, 0, 1)'],
-                        [0.000004, 'rgba(255, 0, 0, 1)'],
-                        [0.000005, 'rgba(0, 0, 0, 0)']
-                    ],
-                    cmin=0,
-                    cmax=20,
-                    colorbar=dict(
-                        title="Vitesse (mm/s)",
-                        tickvals=[0, 3, 8, 20],
-                        ticktext=["0-3", "3-8", "8-20", ">20"]
-                    )
+                    width=4
                 ),
-                name="Trajectoire par Vitesse"
+                hoverinfo="text",
+                hovertext=hover_texts
             ))
+            
+            # NOUVEAU : Ajout de traces "fantômes" pour la légende
+            legend_items = [
+                (0.1, 'Bleu', '0 - 0.1 mm/s'),
+                (3, 'Bleu clair', '0.1 - 3 mm/s'),
+                (8, 'Vert', '3 - 8 mm/s'),
+                (20, 'Jaune', '8 - 20 mm/s'),
+                (100, 'Rouge', '> 20 mm/s')
+            ]
+            
+            for speed, color, name in legend_items:
+                fig_vitesse_3d.add_trace(go.Scatter3d(
+                    x=[None], y=[None], z=[None],
+                    mode='lines',
+                    line=dict(color=color, width=4),
+                    name=name
+                ))
 
             fig_vitesse_3d.update_layout(
                 title_text="Carte des Vitesses 3D",
