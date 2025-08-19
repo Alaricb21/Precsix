@@ -180,6 +180,7 @@ def update_graphs(simulation_filename):
         )
         if 'timeseries' in data and data['timeseries']:
             fig_vitesses_courbes.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP"), row=1, col=1)
+
             if 'commanded_tcp_speeds' in data and data['commanded_tcp_speeds']:
                 for consigne in data['commanded_tcp_speeds']:
                     fig_vitesses_courbes.add_hline(
@@ -189,6 +190,7 @@ def update_graphs(simulation_filename):
                         annotation_position="top right",
                         row=1, col=1
                     )
+            
             for i in range(num_joints):
                 if f'J{i+1}_Speed' in df.columns:
                     fig_vitesses_courbes.add_trace(go.Scatter(x=df['Time'], y=df[f'J{i+1}_Speed'], name=f"Axe {i+1}"), row=i+2, col=1)
@@ -210,10 +212,11 @@ def update_graphs(simulation_filename):
         return html.Div([
             html.H2(f"Analyse de : {simulation_filename}"),
             html.Hr(),
-            dbc.Row([
-                dbc.Col(dcc.Graph(figure=fig_sollicitation, style={'height': '600px'}), md=6),
-                dbc.Col(dcc.Graph(figure=fig_vitesse_3d, style={'height': '600px'}), md=6)
-            ]),
+            html.H3("Tracé 3D par axe sollicité"),
+            dcc.Graph(figure=fig_sollicitation, style={'height': '600px'}),
+            html.Hr(),
+            html.H3("Carte des vitesses 3D"),
+            dcc.Graph(figure=fig_vitesse_3d, style={'height': '600px'}),
             html.Hr(),
             html.Div([dcc.Graph(figure=fig_vitesses_courbes)], style={'maxHeight': '65vh', 'overflowY': 'auto', 'border': '1px solid #ddd'}),
             html.Hr(),
