@@ -153,7 +153,23 @@ def update_graphs(simulation_filename):
                 mode='lines',
                 line=dict(
                     color=colors,
-                    width=4
+                    width=4,
+                    # NOUVEAU : Ajout de la barre de couleur
+                    colorscale=[
+                        [0.0, 'rgba(0, 0, 255, 1)'],
+                        [0.000001, 'rgba(0, 179, 255, 1)'],
+                        [0.000002, 'rgba(0, 255, 0, 1)'],
+                        [0.000003, 'rgba(255, 255, 0, 1)'],
+                        [0.000004, 'rgba(255, 0, 0, 1)'],
+                        [0.000005, 'rgba(0, 0, 0, 0)']
+                    ],
+                    cmin=0,
+                    cmax=20,
+                    colorbar=dict(
+                        title="Vitesse (mm/s)",
+                        tickvals=[0, 3, 8, 20],
+                        ticktext=["0-3", "3-8", "8-20", ">20"]
+                    )
                 ),
                 name="Trajectoire par Vitesse"
             ))
@@ -215,7 +231,7 @@ def update_graphs(simulation_filename):
             html.H3("Tracé 3D par axe sollicité"),
             dcc.Graph(figure=fig_sollicitation, style={'height': '600px'}),
             html.Hr(),
-            html.H3("Carte des vitesses 3D"),
+            html.H3("Carte des Vitesses 3D"),
             dcc.Graph(figure=fig_vitesse_3d, style={'height': '600px'}),
             html.Hr(),
             html.Div([dcc.Graph(figure=fig_vitesses_courbes)], style={'maxHeight': '65vh', 'overflowY': 'auto', 'border': '1px solid #ddd'}),
