@@ -16,7 +16,6 @@ GITHUB_USER = "Alaricb21"
 GITHUB_REPO = "Precsix"
 GITHUB_BRANCH = "main"
 
-# Fonction pour obtenir une couleur en fonction de la vitesse
 def get_color_from_speed_list(speeds):
     colors = []
     for speed in speeds:
@@ -119,7 +118,6 @@ def update_graphs(simulation_filename):
                 show_legend = joint_idx not in legend_shown
                 legend_shown.add(joint_idx)
 
-                # NOUVEAU : Création des informations de survol
                 hover_texts = [
                     f"X: {x:.2f} mm<br>Y: {y:.2f} mm<br>Z: {z:.2f} mm<br>Vitesse: {vitesse:.2f} mm/s"
                     for x, y, z, vitesse in zip(segment_x, segment_y, segment_z, df['TCP_Speed'][start_idx:end_idx])
@@ -155,7 +153,6 @@ def update_graphs(simulation_filename):
             tcp_speeds = df['TCP_Speed']
             colors = get_color_from_speed_list(tcp_speeds)
             
-            # NOUVEAU : Création des informations de survol
             hover_texts = [
                 f"X: {x:.2f} mm<br>Y: {y:.2f} mm<br>Z: {z:.2f} mm<br>Vitesse: {vitesse:.2f} mm/s"
                 for x, y, z, vitesse in zip(path_data[:, 0], path_data[:, 1], path_data[:, 2], tcp_speeds)
@@ -174,16 +171,16 @@ def update_graphs(simulation_filename):
                 hovertext=hover_texts
             ))
             
-            # NOUVEAU : Ajout de traces "fantômes" pour la légende
+            # CORRECTION : Utilisation de couleurs valides pour la légende
             legend_items = [
-                (0.1, 'Bleu', '0 - 0.1 mm/s'),
-                (3, 'Bleu clair', '0.1 - 3 mm/s'),
-                (8, 'Vert', '3 - 8 mm/s'),
-                (20, 'Jaune', '8 - 20 mm/s'),
-                (100, 'Rouge', '> 20 mm/s')
+                (0.1, 'rgba(0, 0, 255, 1)', '0 - 0.1 mm/s'),
+                (3, 'rgba(0, 179, 255, 1)', '0.1 - 3 mm/s'),
+                (8, 'rgba(0, 255, 0, 1)', '3 - 8 mm/s'),
+                (20, 'rgba(255, 255, 0, 1)', '8 - 20 mm/s'),
+                (100, 'rgba(255, 0, 0, 1)', '> 20 mm/s')
             ]
             
-            for speed, color, name in legend_items:
+            for _, color, name in legend_items:
                 fig_vitesse_3d.add_trace(go.Scatter3d(
                     x=[None], y=[None], z=[None],
                     mode='lines',
