@@ -1,5 +1,5 @@
 # Fichier: Dashboard_En_Ligne.py
-"""
+
 import pandas as pd
 import json
 import requests
@@ -350,3 +350,4 @@ def update_graphs(simulation_filename):
 
 if __name__ == '__main__':
     app.run_server(debug=True)
+"""
