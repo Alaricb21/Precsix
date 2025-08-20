@@ -171,7 +171,6 @@ def update_graphs(simulation_filename):
                 hovertext=hover_texts
             ))
             
-            # CORRECTION : Utilisation de couleurs valides pour la légende
             legend_items = [
                 (0.1, 'rgba(0, 0, 255, 1)', '0 - 0.1 mm/s'),
                 (3, 'rgba(0, 179, 255, 1)', '0.1 - 3 mm/s'),
@@ -201,19 +200,19 @@ def update_graphs(simulation_filename):
             fig_vitesse_3d.add_annotation(text="Pas de données de vitesse ou de tracé pour cette simulation.", showarrow=False)
             fig_vitesse_3d.update_layout(title_text="Carte des Vitesses 3D", height=600)
         
-        # --- GRAPH C : Vitesses TCP et des Axes ---
-        fig_vitesses_courbes = make_subplots(
+        # --- GRAPH C : Vitesse TCP en fonction du temps ---
+        fig_vitesse_temps = make_subplots(
             rows=num_joints + 1,
             cols=1,
             shared_xaxes=True,
             subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(num_joints)])
         )
         if 'timeseries' in data and data['timeseries']:
-            fig_vitesses_courbes.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP"), row=1, col=1)
+            fig_vitesse_temps.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP"), row=1, col=1)
 
             if 'commanded_tcp_speeds' in data and data['commanded_tcp_speeds']:
                 for consigne in data['commanded_tcp_speeds']:
-                    fig_vitesses_courbes.add_hline(
+                    fig_vitesse_temps.add_hline(
                         y=consigne,
                         line_dash="dot",
                         annotation_text=f"Consigne: {consigne} mm/s",
@@ -223,10 +222,45 @@ def update_graphs(simulation_filename):
             
             for i in range(num_joints):
                 if f'J{i+1}_Speed' in df.columns:
-                    fig_vitesses_courbes.add_trace(go.Scatter(x=df['Time'], y=df[f'J{i+1}_Speed'], name=f"Axe {i+1}"), row=i+2, col=1)
-        fig_vitesses_courbes.update_layout(showlegend=False, height=400 + num_joints * 200)
+                    fig_vitesse_temps.add_trace(go.Scatter(x=df['Time'], y=df[f'J{i+1}_Speed'], name=f"Axe {i+1}"), row=i+2, col=1)
+        fig_vitesse_temps.update_layout(showlegend=False, height=400 + num_joints * 200)
 
-        # --- GRAPH D : Déplacement angulaire total ---
+        # --- NOUVEAU GRAPH D : Vitesse TCP en fonction de la distance ---
+        fig_vitesse_distance = go.Figure()
+        if 'tcp_positions' in data and data['tcp_positions'] and 'timeseries' in data and data['timeseries']:
+            path_data = np.array(data['tcp_positions'])
+            tcp_speeds = df['TCP_Speed']
+            
+            # Calcul de la distance cumulée
+            distances = np.linalg.norm(np.diff(path_data, axis=0), axis=1)
+            cumulative_distance = np.insert(np.cumsum(distances), 0, 0)
+            
+            fig_vitesse_distance.add_trace(go.Scatter(
+                x=cumulative_distance[1:],
+                y=tcp_speeds,
+                mode='lines',
+                name="Vitesse TCP"
+            ))
+
+            if 'commanded_tcp_speeds' in data and data['commanded_tcp_speeds']:
+                for consigne in data['commanded_tcp_speeds']:
+                    fig_vitesse_distance.add_hline(
+                        y=consigne,
+                        line_dash="dot",
+                        annotation_text=f"Consigne: {consigne} mm/s",
+                        annotation_position="top right"
+                    )
+
+            fig_vitesse_distance.update_layout(
+                title_text="Vitesse TCP en fonction de la distance",
+                xaxis_title="Distance parcourue (mm)",
+                yaxis_title="Vitesse TCP (mm/s)"
+            )
+        else:
+            fig_vitesse_distance.add_annotation(text="Pas de données de vitesse ou de distance pour cette simulation.", showarrow=False)
+            fig_vitesse_distance.update_layout(title_text="Vitesse TCP en fonction de la distance")
+
+        # --- GRAPH E : Déplacement angulaire total ---
         fig_cumul = go.Figure()
         if 'total_travel' in data and data['total_travel']:
             total_travel_data = data['total_travel']
@@ -248,7 +282,10 @@ def update_graphs(simulation_filename):
             html.H3("Carte des Vitesses 3D"),
             dcc.Graph(figure=fig_vitesse_3d, style={'height': '600px'}),
             html.Hr(),
-            html.Div([dcc.Graph(figure=fig_vitesses_courbes)], style={'maxHeight': '65vh', 'overflowY': 'auto', 'border': '1px solid #ddd'}),
+            html.Div([dcc.Graph(figure=fig_vitesse_temps)], style={'maxHeight': '65vh', 'overflowY': 'auto', 'border': '1px solid #ddd'}),
+            html.Hr(),
+            html.H3("Vitesse TCP en fonction de la distance"),
+            dcc.Graph(figure=fig_vitesse_distance),
             html.Hr(),
             dcc.Graph(figure=fig_cumul, style={'height': '450px'})
         ])
