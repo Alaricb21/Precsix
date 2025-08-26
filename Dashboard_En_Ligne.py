@@ -24,15 +24,15 @@ def get_color_from_speed_list(speeds):
     colors = []
     for speed in speeds:
         if speed <= 0.1:
-            colors.append('rgba(0, 0, 255, 1)')
+            colors.append('rgba(0, 0, 255, 1)') # Bleu
         elif speed <= 3:
-            colors.append('rgba(0, 179, 255, 1)')
+            colors.append('rgba(0, 179, 255, 1)') # Bleu clair
         elif speed <= 8:
-            colors.append('rgba(0, 255, 0, 1)')
+            colors.append('rgba(0, 255, 0, 1)') # Vert
         elif speed <= 20:
-            colors.append('rgba(255, 255, 0, 1)')
+            colors.append('rgba(255, 255, 0, 1)') # Jaune
         else:
-            colors.append('rgba(255, 0, 0, 1)')
+            colors.append('rgba(255, 0, 0, 1)') # Rouge
     return colors
 
 def get_simulation_list():
@@ -71,14 +71,9 @@ def parse_uploaded_contents(contents, filename):
             log_text = decoded.decode('utf-8')
             parsed_data_list = []
             
-            # Utilisation de regex pour extraire les données des lignes <Rob ...>
             robot_data_pattern = re.compile(
-                r'<Rob Type=\"KUKA\">'
-                r'<RIst X=\"(.*?)\" Y=\"(.*?)\" Z=\"(.*?)\" .*?>'
-                r'<RSol .*?>'
-                r'<AIPos A1=\"(.*?)\" A2=\"(.*?)\" A3=\"(.*?)\" A4=\"(.*?)\" A5=\"(.*?)\" A6=\"(.*?)\"/>'
-                r'<Delay D=\"(.*?)\"/>'
-                r'<Digin>.*?</Digin><Digout>.*?</Digout>'
+                r'<Rob Type=\"KUKA\"><RIst X=\"(.*?)\" Y=\"(.*?)\" Z=\"(.*?)\" .*?>.*?'
+                r'<AIPos A1=\"(.*?)\" A2=\"(.*?)\" A3=\"(.*?)\" A4=\"(.*?)\" A5=\"(.*?)\" A6=\"(.*?)\"/>.*?'
                 r'<IPOC>(.*?)</IPOC>'
             )
 
@@ -86,18 +81,16 @@ def parse_uploaded_contents(contents, filename):
                 match = robot_data_pattern.search(line)
                 if match:
                     data_row = [float(val) for val in match.groups()]
-                    # IPOC est en millisecondes, on le convertit en secondes
-                    data_row[-1] = data_row[-1] / 1000.0
+                    data_row[-1] = data_row[-1] / 1000.0 # Conversion de IPOC en secondes
                     parsed_data_list.append(data_row)
             
             if not parsed_data_list:
                 error_message = "Impossible de trouver des données valides dans le fichier .log"
                 return None, error_message
             
-            df_columns = ['Pos_X', 'Pos_Y', 'Pos_Z', 'J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'Delay', 'Time']
+            df_columns = ['Pos_X', 'Pos_Y', 'Pos_Z', 'J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'Time']
             df = pd.DataFrame(parsed_data_list, columns=df_columns)
             
-            # Recalcul des vitesses
             times = df['Time'].values
             positions_np = df[['Pos_X', 'Pos_Y', 'Pos_Z']].values
             joints_np = df[['J1', 'J2', 'J3', 'J4', 'J5', 'J6']].values
@@ -132,7 +125,7 @@ def parse_uploaded_contents(contents, filename):
             }
 
         elif 'xml' in filename:
-            # Traitement des fichiers XML (l'ancienne version)
+            # Logique pour les fichiers XML
             root = ET.fromstring(decoded)
             data_dict = {}
             for child in root:
@@ -156,6 +149,7 @@ def parse_uploaded_contents(contents, filename):
             }
 
         elif 'json' in filename:
+            # Logique pour les fichiers JSON
             data = json.loads(decoded)
             
         else:
