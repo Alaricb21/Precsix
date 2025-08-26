@@ -13,6 +13,7 @@ import plotly.express as px
 import base64
 import io
 import xml.etree.ElementTree as ET
+import re
 
 # --- Configuration ---
 GITHUB_USER = "Alaricb21"
@@ -67,15 +68,39 @@ def parse_uploaded_contents(contents, filename):
 
     try:
         if 'log' in filename:
-            df = pd.read_csv(io.StringIO(decoded.decode('utf-8')), sep='\s+', header=None)
+            log_text = decoded.decode('utf-8')
+            parsed_data_list = []
             
-            if len(df.columns) < 7:
-                error_message = "Format du fichier .log invalide. Nombre de colonnes insuffisant."
+            # Utilisation de regex pour extraire les données des lignes <Rob ...>
+            robot_data_pattern = re.compile(
+                r'<Rob Type=\"KUKA\">'
+                r'<RIst X=\"(.*?)\" Y=\"(.*?)\" Z=\"(.*?)\" .*?>'
+                r'<RSol .*?>'
+                r'<AIPos A1=\"(.*?)\" A2=\"(.*?)\" A3=\"(.*?)\" A4=\"(.*?)\" A5=\"(.*?)\" A6=\"(.*?)\"/>'
+                r'<Delay D=\"(.*?)\"/>'
+                r'<Digin>.*?</Digin><Digout>.*?</Digout>'
+                r'<IPOC>(.*?)</IPOC>'
+            )
+
+            for line in log_text.splitlines():
+                match = robot_data_pattern.search(line)
+                if match:
+                    data_row = [float(val) for val in match.groups()]
+                    # IPOC est en millisecondes, on le convertit en secondes
+                    data_row[-1] = data_row[-1] / 1000.0
+                    parsed_data_list.append(data_row)
+            
+            if not parsed_data_list:
+                error_message = "Impossible de trouver des données valides dans le fichier .log"
                 return None, error_message
             
-            times = df.iloc[:, 0].values
-            positions_np = df.iloc[:, 1:4].values
-            joints_np = df.iloc[:, 4:10].values
+            df_columns = ['Pos_X', 'Pos_Y', 'Pos_Z', 'J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'Delay', 'Time']
+            df = pd.DataFrame(parsed_data_list, columns=df_columns)
+            
+            # Recalcul des vitesses
+            times = df['Time'].values
+            positions_np = df[['Pos_X', 'Pos_Y', 'Pos_Z']].values
+            joints_np = df[['J1', 'J2', 'J3', 'J4', 'J5', 'J6']].values
             
             delta_time = np.diff(times)
             delta_time[delta_time <= 0] = 0.0001
@@ -107,6 +132,7 @@ def parse_uploaded_contents(contents, filename):
             }
 
         elif 'xml' in filename:
+            # Traitement des fichiers XML (l'ancienne version)
             root = ET.fromstring(decoded)
             data_dict = {}
             for child in root:
@@ -150,7 +176,7 @@ server = app.server
 app.title = "Analyseur de Simulations Robot"
 
 app.layout = dbc.Container([
-    dcc.Store(id='data-store', data={}), # Correction : La valeur par défaut est un dictionnaire vide
+    dcc.Store(id='data-store', data={}),
     dbc.Row(dbc.Col(html.H1("Analyseur de Simulations Robot"), width=12, className="text-center my-4")),
     dbc.Row([
         dbc.Col([
