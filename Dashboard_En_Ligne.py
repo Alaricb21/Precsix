@@ -23,40 +23,56 @@ def get_color_from_speed_list(speeds):
     colors = []
     for speed in speeds:
         if speed <= 0.1:
-            colors.append('rgba(0, 0, 255, 1)') # Bleu
+            colors.append('rgba(0, 0, 255, 1)')
         elif speed <= 3:
-            colors.append('rgba(0, 179, 255, 1)') # Bleu clair
+            colors.append('rgba(0, 179, 255, 1)')
         elif speed <= 8:
-            colors.append('rgba(0, 255, 0, 1)') # Vert
+            colors.append('rgba(0, 255, 0, 1)')
         elif speed <= 20:
-            colors.append('rgba(255, 255, 0, 1)') # Jaune
+            colors.append('rgba(255, 255, 0, 1)')
         else:
-            colors.append('rgba(255, 0, 0, 1)') # Rouge
+            colors.append('rgba(255, 0, 0, 1)')
     return colors
 
-# --- NOUVEAU : Fonction de chargement de données à partir de fichiers uploadés ---
-def parse_contents(contents, filename):
+# --- Fonctions de chargement de données ---
+def get_simulation_list():
+    try:
+        api_url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/"
+        response = requests.get(api_url)
+        response.raise_for_status()
+        files = [{'label': item['name'], 'value': item['path']} for item in response.json() if item['name'].endswith('.json') and item['type'] == 'file']
+        return files
+    except Exception as e:
+        print(f"Erreur en récupérant la liste des fichiers depuis GitHub: {e}")
+        return []
+
+def load_simulation_data_from_github(filename):
+    try:
+        raw_url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
+        response = requests.get(raw_url)
+        response.raise_for_status()
+        return json.loads(response.text)
+    except Exception as e:
+        return None
+
+def parse_uploaded_contents(contents, filename):
     if contents is None:
-        return None, None, None
+        return None, "Veuillez télécharger un fichier de simulation (XML, JSON ou LOG)."
     
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
 
     try:
         if 'log' in filename:
-            # Traitement d'un fichier .log
             df = pd.read_csv(io.StringIO(decoded.decode('utf-8')), sep='\s+', header=None)
             
-            # On assume que la première colonne est le temps, les 3 suivantes la position TCP, et les suivantes les positions des axes
-            # Cette hypothèse peut être ajustée si votre fichier a une structure différente
-            if len(df.columns) < 7: # au moins temps, position XYZ et 3 axes
-                return None, None, "Format du fichier .log invalide. Nombre de colonnes insuffisant."
+            if len(df.columns) < 7:
+                return None, "Format du fichier .log invalide. Nombre de colonnes insuffisant."
             
             times = df.iloc[:, 0].values
-            positions_np = df.iloc[:, 1:4].values # Pos_X, Pos_Y, Pos_Z
-            joints_np = df.iloc[:, 4:10].values # J1 à J6
+            positions_np = df.iloc[:, 1:4].values
+            joints_np = df.iloc[:, 4:10].values
             
-            # Recalcul des vitesses
             delta_time = np.diff(times)
             delta_time[delta_time <= 0] = 0.0001
             
@@ -69,7 +85,6 @@ def parse_contents(contents, filename):
             most_solicited_joint = np.argmax(np.abs(joint_speeds), axis=1).tolist()
             total_travel = np.sum(np.abs(delta_joints), axis=0).tolist()
             
-            # Création du DataFrame pour le dashboard
             timeseries = pd.DataFrame({
                 'Time': times[1:],
                 'TCP_Speed': tcp_speeds,
@@ -80,24 +95,21 @@ def parse_contents(contents, filename):
             num_joints = joints_np.shape[1]
 
         elif 'xml' in filename:
-            # Traitement d'un fichier .xml
             root = ET.fromstring(decoded)
             data_dict = {}
             for child in root:
                 data_dict[child.tag] = [float(c.text) for c in child]
             df = pd.DataFrame(data_dict)
             
-            # On simule les données requises pour le dashboard
             df['TCP_Speed'] = np.random.rand(len(df)) * 50
             
             timeseries = df.to_dict('records')
             tcp_positions = df[['Pos_X', 'Pos_Y', 'Pos_Z']].values.tolist()
             most_solicited_joint = np.zeros(len(df)).tolist()
             total_travel = np.zeros(len(df)).tolist()
-            num_joints = 6 # On suppose 6 axes
+            num_joints = 6
 
         elif 'json' in filename:
-            # Traitement d'un fichier .json
             json_data = json.loads(decoded)
             
             timeseries = json_data.get('timeseries', [])
@@ -107,28 +119,40 @@ def parse_contents(contents, filename):
             num_joints = len(total_travel) if total_travel else 0
             
         else:
-            return None, None, "Format de fichier non pris en charge."
+            return None, "Format de fichier non pris en charge.", None
 
     except Exception as e:
-        return None, None, f"Erreur lors du traitement du fichier : {e}"
-
-    return {
+        return None, f"Erreur lors du traitement du fichier : {e}", None
+        
+    data = {
         'timeseries': timeseries,
         'tcp_positions': tcp_positions,
         'most_solicited_joint': most_solicited_joint,
         'total_travel': total_travel,
-        'commanded_tcp_speeds': [5, 16.67, 100], # Consignes par défaut
-    }, num_joints, None
+        'commanded_tcp_speeds': [5, 16.67, 100],
+    }
+
+    return data, num_joints, None
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
 app.title = "Analyseur de Simulations Robot"
 
 app.layout = dbc.Container([
+    dcc.Store(id='data-store'), # Stockage des données chargées
     dbc.Row(dbc.Col(html.H1("Analyseur de Simulations Robot"), width=12, className="text-center my-4")),
     dbc.Row([
         dbc.Col([
-            html.H4("Télécharger une simulation"),
+            html.H4("Sélectionner depuis GitHub"),
+            dcc.Dropdown(
+                id='dropdown-simulation',
+                options=get_simulation_list(),
+                placeholder="Choisissez un fichier GitHub...",
+            ),
+            html.Br(),
+            dbc.Button("Rafraîchir la liste", id='btn-refresh', color="info", className="w-100"),
+            html.Hr(),
+            html.H4("Télécharger un fichier local"),
             dcc.Upload(
                 id='upload-data',
                 children=html.Div(['Glissez-déposez ou ', html.A('Sélectionnez un fichier')]),
@@ -142,24 +166,54 @@ app.layout = dbc.Container([
     ])
 ], fluid=True)
 
+# Callback pour mettre à jour la liste des fichiers GitHub
+@app.callback(
+    Output('dropdown-simulation', 'options'),
+    Input('btn-refresh', 'n_clicks')
+)
+def update_dropdown_list(n_clicks):
+    return get_simulation_list()
+
+# Callback pour charger des données depuis GitHub
+@app.callback(
+    Output('data-store', 'data'),
+    Input('dropdown-simulation', 'value'),
+    prevent_initial_call=True
+)
+def load_data_from_dropdown(simulation_filename):
+    if simulation_filename:
+        data = load_simulation_data_from_github(simulation_filename)
+        return data if data else {}
+    return {}
+
+# Callback pour charger des données depuis l'upload local
+@app.callback(
+    Output('data-store', 'data', allow_duplicate=True),
+    Input('upload-data', 'contents'),
+    State('upload-data', 'filename'),
+    prevent_initial_call=True
+)
+def load_data_from_upload(contents, filename):
+    data, _, error_msg = parse_uploaded_contents(contents, filename)
+    return data if data else {}
+
+# Callback pour générer les graphiques à partir des données stockées
 @app.callback(
     Output('graph-container', 'children'),
-    Input('upload-data', 'contents'),
-    State('upload-data', 'filename')
+    Input('data-store', 'data')
 )
-def update_output(contents, filename):
-    if contents is None:
-        return html.Div("Veuillez télécharger un fichier de simulation (XML, JSON ou LOG) pour commencer l'analyse.")
-
-    data, num_joints, error_msg = parse_contents(contents, filename)
-    if error_msg:
-        return html.Div(f"❌ {error_msg}")
+def update_graphs(data):
+    if not data:
+        return html.Div("Veuillez sélectionner un fichier ou en télécharger un pour commencer l'analyse.")
     
     try:
         df = pd.DataFrame(data['timeseries'])
-        
-        # --- GRAPH A : Tracé 3D coloré par l'axe sollicité ---
+        num_joints = len(data.get('total_travel', []))
+        simulation_filename = data.get('filename', 'Fichier téléchargé')
+
+        # --- GRAPH A : Tracé 3D coloré par l'axe sollicité (avec survol) ---
         fig_sollicitation = go.Figure()
+        # ... (code for fig_sollicitation) ...
         if 'tcp_positions' in data and data['tcp_positions'] and 'most_solicited_joint' in data and data['most_solicited_joint']:
             path_data = np.array(data['tcp_positions'])
             most_solicited = np.array(data['most_solicited_joint'])
@@ -208,8 +262,8 @@ def update_output(contents, filename):
         else:
             fig_sollicitation.add_annotation(text="Pas de données de sollicitation d'axe pour cette simulation.", showarrow=False)
             fig_sollicitation.update_layout(title_text="Tracé 3D par axe sollicité", height=600)
-
-        # --- GRAPH B : Tracé 3D coloré par la vitesse ---
+        
+        # --- GRAPH B : Tracé 3D coloré par la vitesse (avec survol et légende) ---
         fig_vitesse_3d = go.Figure()
         if 'tcp_positions' in data and data['tcp_positions'] and 'timeseries' in data and data['timeseries']:
             path_data = np.array(data['tcp_positions'])
@@ -263,19 +317,19 @@ def update_output(contents, filename):
             fig_vitesse_3d.add_annotation(text="Pas de données de vitesse ou de tracé pour cette simulation.", showarrow=False)
             fig_vitesse_3d.update_layout(title_text="Carte des Vitesses 3D", height=600)
         
-        # --- GRAPH C : Vitesses TCP et des Axes ---
-        fig_vitesses_courbes = make_subplots(
+        # --- GRAPH C : Vitesse TCP en fonction du temps ---
+        fig_vitesse_temps = make_subplots(
             rows=num_joints + 1,
             cols=1,
             shared_xaxes=True,
             subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(num_joints)])
         )
         if 'timeseries' in data and data['timeseries']:
-            fig_vitesses_courbes.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP"), row=1, col=1)
+            fig_vitesse_temps.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP"), row=1, col=1)
 
             if 'commanded_tcp_speeds' in data and data['commanded_tcp_speeds']:
                 for consigne in data['commanded_tcp_speeds']:
-                    fig_vitesses_courbes.add_hline(
+                    fig_vitesse_temps.add_hline(
                         y=consigne,
                         line_dash="dot",
                         annotation_text=f"Consigne: {consigne} mm/s",
@@ -285,8 +339,8 @@ def update_output(contents, filename):
             
             for i in range(num_joints):
                 if f'J{i+1}_Speed' in df.columns:
-                    fig_vitesses_courbes.add_trace(go.Scatter(x=df['Time'], y=df[f'J{i+1}_Speed'], name=f"Axe {i+1}"), row=i+2, col=1)
-        fig_vitesses_courbes.update_layout(showlegend=False, height=400 + num_joints * 200)
+                    fig_vitesse_temps.add_trace(go.Scatter(x=df['Time'], y=df[f'J{i+1}_Speed'], name=f"Axe {i+1}"), row=i+2, col=1)
+        fig_vitesse_temps.update_layout(showlegend=False, height=400 + num_joints * 200)
 
         # --- NOUVEAU GRAPH D : Vitesse TCP en fonction de la distance ---
         fig_vitesse_distance = go.Figure()
