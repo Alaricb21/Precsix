@@ -34,7 +34,6 @@ def get_color_from_speed_list(speeds):
             colors.append('rgba(255, 0, 0, 1)')
     return colors
 
-# --- Fonctions de chargement de données ---
 def get_simulation_list():
     try:
         api_url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/"
@@ -52,7 +51,7 @@ def load_simulation_data_from_github(filename):
         response = requests.get(raw_url)
         response.raise_for_status()
         json_data = json.loads(response.text)
-        json_data['filename'] = filename # On ajoute le nom du fichier au dictionnaire
+        json_data['filename'] = filename
         return json_data
     except Exception as e:
         return None
@@ -136,7 +135,7 @@ def parse_uploaded_contents(contents, filename):
         else:
             error_message = "Format de fichier non pris en charge."
             return None, error_message
-
+    
     except Exception as e:
         error_message = f"Erreur lors du traitement du fichier : {e}"
         return None, error_message
@@ -151,7 +150,7 @@ server = app.server
 app.title = "Analyseur de Simulations Robot"
 
 app.layout = dbc.Container([
-    dcc.Store(id='data-store'),
+    dcc.Store(id='data-store', data={}), # Correction : La valeur par défaut est un dictionnaire vide
     dbc.Row(dbc.Col(html.H1("Analyseur de Simulations Robot"), width=12, className="text-center my-4")),
     dbc.Row([
         dbc.Col([
@@ -207,7 +206,6 @@ def load_data_from_upload(contents, filename):
         return no_update
     data, error_msg = parse_uploaded_contents(contents, filename)
     if error_msg:
-        # Affiche l'erreur si le parsing échoue
         return {'error': error_msg}
     return data
 
@@ -224,7 +222,6 @@ def update_graphs(data):
         num_joints = len(data.get('total_travel', []))
         simulation_filename = data.get('filename', 'Fichier téléchargé')
 
-        # --- GRAPH A : Tracé 3D coloré par l'axe sollicité (avec survol) ---
         fig_sollicitation = go.Figure()
         if 'tcp_positions' in data and data['tcp_positions'] and 'most_solicited_joint' in data and data['most_solicited_joint']:
             path_data = np.array(data['tcp_positions'])
@@ -275,7 +272,6 @@ def update_graphs(data):
             fig_sollicitation.add_annotation(text="Pas de données de sollicitation d'axe pour cette simulation.", showarrow=False)
             fig_sollicitation.update_layout(title_text="Tracé 3D par axe sollicité", height=600)
 
-        # --- GRAPH B : Tracé 3D coloré par la vitesse ---
         fig_vitesse_3d = go.Figure()
         if 'tcp_positions' in data and data['tcp_positions'] and 'timeseries' in data and data['timeseries']:
             path_data = np.array(data['tcp_positions'])
@@ -329,7 +325,6 @@ def update_graphs(data):
             fig_vitesse_3d.add_annotation(text="Pas de données de vitesse ou de tracé pour cette simulation.", showarrow=False)
             fig_vitesse_3d.update_layout(title_text="Carte des Vitesses 3D", height=600)
         
-        # --- GRAPH C : Vitesse TCP en fonction du temps ---
         fig_vitesse_temps = make_subplots(
             rows=num_joints + 1,
             cols=1,
@@ -354,7 +349,6 @@ def update_graphs(data):
                     fig_vitesse_temps.add_trace(go.Scatter(x=df['Time'], y=df[f'J{i+1}_Speed'], name=f"Axe {i+1}"), row=i+2, col=1)
         fig_vitesse_temps.update_layout(showlegend=False, height=400 + num_joints * 200)
 
-        # --- NOUVEAU GRAPH D : Vitesse TCP en fonction de la distance ---
         fig_vitesse_distance = go.Figure()
         if 'tcp_positions' in data and data['tcp_positions'] and 'timeseries' in data and data['timeseries']:
             path_data = np.array(data['tcp_positions'])
@@ -388,7 +382,6 @@ def update_graphs(data):
             fig_vitesse_distance.add_annotation(text="Pas de données de vitesse ou de distance pour cette simulation.", showarrow=False)
             fig_vitesse_distance.update_layout(title_text="Vitesse TCP en fonction de la distance")
 
-        # --- GRAPH E : Déplacement angulaire total ---
         fig_cumul = go.Figure()
         if 'total_travel' in data and data['total_travel']:
             total_travel_data = data['total_travel']
