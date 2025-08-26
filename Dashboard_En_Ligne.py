@@ -71,11 +71,15 @@ def parse_uploaded_contents(contents, filename):
             log_text = decoded.decode('utf-8')
             parsed_data_list = []
             
-            # Correction : L'analyseur XML ne s'applique qu'aux lignes valides
+            # Correction : Utilisation d'une regex pour extraire le XML où qu'il se trouve sur la ligne
+            robot_data_pattern = re.compile(r'<Rob.*?</Rob>')
+
             for line in log_text.splitlines():
-                if line.strip().startswith('<Rob'):
+                match = robot_data_pattern.search(line)
+                if match:
+                    xml_string = match.group(0)
                     try:
-                        root = ET.fromstring(line.strip())
+                        root = ET.fromstring(xml_string)
                         
                         time = float(root.find('IPOC').text) / 1000.0
                         pos = root.find('RIst')
@@ -95,7 +99,6 @@ def parse_uploaded_contents(contents, filename):
                         }
                         parsed_data_list.append(data_row)
                     except Exception as e:
-                        # Ignorer les lignes XML mal formées
                         continue
             
             if not parsed_data_list:
@@ -138,7 +141,6 @@ def parse_uploaded_contents(contents, filename):
             }
 
         elif 'xml' in filename:
-            # Traitement des fichiers XML (l'ancienne version)
             root = ET.fromstring(decoded)
             data_dict = {}
             for child in root:
