@@ -5,7 +5,7 @@ import json
 import requests
 import numpy as np
 import dash
-from dash import dcc, html, Input, Output, State
+from dash import dcc, html, Input, Output, State, no_update
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import dash_bootstrap_components as dbc
@@ -51,7 +51,9 @@ def load_simulation_data_from_github(filename):
         raw_url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
         response = requests.get(raw_url)
         response.raise_for_status()
-        return json.loads(response.text)
+        json_data = json.loads(response.text)
+        json_data['filename'] = filename # On ajoute le nom du fichier au dictionnaire
+        return json_data
     except Exception as e:
         return None
 
@@ -61,13 +63,16 @@ def parse_uploaded_contents(contents, filename):
     
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
+    data = None
+    error_message = None
 
     try:
         if 'log' in filename:
             df = pd.read_csv(io.StringIO(decoded.decode('utf-8')), sep='\s+', header=None)
             
             if len(df.columns) < 7:
-                return None, "Format du fichier .log invalide. Nombre de colonnes insuffisant."
+                error_message = "Format du fichier .log invalide. Nombre de colonnes insuffisant."
+                return None, error_message
             
             times = df.iloc[:, 0].values
             positions_np = df.iloc[:, 1:4].values
@@ -93,6 +98,14 @@ def parse_uploaded_contents(contents, filename):
             
             tcp_positions = positions_np.tolist()
             num_joints = joints_np.shape[1]
+            
+            data = {
+                'timeseries': timeseries,
+                'tcp_positions': tcp_positions,
+                'most_solicited_joint': most_solicited_joint,
+                'total_travel': total_travel,
+                'commanded_tcp_speeds': [5, 16.67, 100],
+            }
 
         elif 'xml' in filename:
             root = ET.fromstring(decoded)
@@ -109,37 +122,36 @@ def parse_uploaded_contents(contents, filename):
             total_travel = np.zeros(len(df)).tolist()
             num_joints = 6
 
+            data = {
+                'timeseries': timeseries,
+                'tcp_positions': tcp_positions,
+                'most_solicited_joint': most_solicited_joint,
+                'total_travel': total_travel,
+                'commanded_tcp_speeds': [5, 16.67, 100],
+            }
+
         elif 'json' in filename:
-            json_data = json.loads(decoded)
-            
-            timeseries = json_data.get('timeseries', [])
-            tcp_positions = json_data.get('tcp_positions', [])
-            most_solicited_joint = json_data.get('most_solicited_joint', [])
-            total_travel = json_data.get('total_travel', [])
-            num_joints = len(total_travel) if total_travel else 0
+            data = json.loads(decoded)
             
         else:
-            return None, "Format de fichier non pris en charge.", None
+            error_message = "Format de fichier non pris en charge."
+            return None, error_message
 
     except Exception as e:
-        return None, f"Erreur lors du traitement du fichier : {e}", None
+        error_message = f"Erreur lors du traitement du fichier : {e}"
+        return None, error_message
+    
+    if data:
+        data['filename'] = filename
         
-    data = {
-        'timeseries': timeseries,
-        'tcp_positions': tcp_positions,
-        'most_solicited_joint': most_solicited_joint,
-        'total_travel': total_travel,
-        'commanded_tcp_speeds': [5, 16.67, 100],
-    }
-
-    return data, num_joints, None
+    return data, error_message
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
 app.title = "Analyseur de Simulations Robot"
 
 app.layout = dbc.Container([
-    dcc.Store(id='data-store'), # Stockage des données chargées
+    dcc.Store(id='data-store'),
     dbc.Row(dbc.Col(html.H1("Analyseur de Simulations Robot"), width=12, className="text-center my-4")),
     dbc.Row([
         dbc.Col([
@@ -166,7 +178,6 @@ app.layout = dbc.Container([
     ])
 ], fluid=True)
 
-# Callback pour mettre à jour la liste des fichiers GitHub
 @app.callback(
     Output('dropdown-simulation', 'options'),
     Input('btn-refresh', 'n_clicks')
@@ -174,7 +185,6 @@ app.layout = dbc.Container([
 def update_dropdown_list(n_clicks):
     return get_simulation_list()
 
-# Callback pour charger des données depuis GitHub
 @app.callback(
     Output('data-store', 'data'),
     Input('dropdown-simulation', 'value'),
@@ -186,7 +196,6 @@ def load_data_from_dropdown(simulation_filename):
         return data if data else {}
     return {}
 
-# Callback pour charger des données depuis l'upload local
 @app.callback(
     Output('data-store', 'data', allow_duplicate=True),
     Input('upload-data', 'contents'),
@@ -194,17 +203,21 @@ def load_data_from_dropdown(simulation_filename):
     prevent_initial_call=True
 )
 def load_data_from_upload(contents, filename):
-    data, _, error_msg = parse_uploaded_contents(contents, filename)
-    return data if data else {}
+    if contents is None:
+        return no_update
+    data, error_msg = parse_uploaded_contents(contents, filename)
+    if error_msg:
+        # Affiche l'erreur si le parsing échoue
+        return {'error': error_msg}
+    return data
 
-# Callback pour générer les graphiques à partir des données stockées
 @app.callback(
     Output('graph-container', 'children'),
     Input('data-store', 'data')
 )
 def update_graphs(data):
-    if not data:
-        return html.Div("Veuillez sélectionner un fichier ou en télécharger un pour commencer l'analyse.")
+    if not data or 'error' in data:
+        return html.Div(f"❌ {data.get('error', 'Veuillez sélectionner un fichier ou en télécharger un pour commencer l\'analyse.')}")
     
     try:
         df = pd.DataFrame(data['timeseries'])
@@ -213,7 +226,6 @@ def update_graphs(data):
 
         # --- GRAPH A : Tracé 3D coloré par l'axe sollicité (avec survol) ---
         fig_sollicitation = go.Figure()
-        # ... (code for fig_sollicitation) ...
         if 'tcp_positions' in data and data['tcp_positions'] and 'most_solicited_joint' in data and data['most_solicited_joint']:
             path_data = np.array(data['tcp_positions'])
             most_solicited = np.array(data['most_solicited_joint'])
@@ -262,8 +274,8 @@ def update_graphs(data):
         else:
             fig_sollicitation.add_annotation(text="Pas de données de sollicitation d'axe pour cette simulation.", showarrow=False)
             fig_sollicitation.update_layout(title_text="Tracé 3D par axe sollicité", height=600)
-        
-        # --- GRAPH B : Tracé 3D coloré par la vitesse (avec survol et légende) ---
+
+        # --- GRAPH B : Tracé 3D coloré par la vitesse ---
         fig_vitesse_3d = go.Figure()
         if 'tcp_positions' in data and data['tcp_positions'] and 'timeseries' in data and data['timeseries']:
             path_data = np.array(data['tcp_positions'])
@@ -393,7 +405,7 @@ def update_graphs(data):
             fig_cumul.update_layout(title_text="Déplacement Angulaire Total", height=450)
 
         return html.Div([
-            html.H2(f"Analyse de : {filename}"),
+            html.H2(f"Analyse de : {simulation_filename}"),
             html.Hr(),
             html.H3("Tracé 3D par axe sollicité"),
             dcc.Graph(figure=fig_sollicitation, style={'height': '600px'}),
