@@ -72,23 +72,38 @@ def parse_uploaded_contents(contents, filename):
             parsed_data_list = []
             
             robot_data_pattern = re.compile(
-                r'<Rob Type=\"KUKA\"><RIst X=\"(.*?)\" Y=\"(.*?)\" Z=\"(.*?)\" .*?>.*?'
-                r'<AIPos A1=\"(.*?)\" A2=\"(.*?)\" A3=\"(.*?)\" A4=\"(.*?)\" A5=\"(.*?)\" A6=\"(.*?)\"/>.*?'
-                r'<IPOC>(.*?)</IPOC>'
+                r'<Rob.*?</Rob>'
             )
 
             for line in log_text.splitlines():
                 match = robot_data_pattern.search(line)
                 if match:
-                    data_row = [float(val) for val in match.groups()]
-                    data_row[-1] = data_row[-1] / 1000.0
+                    xml_string = match.group(0)
+                    root = ET.fromstring(xml_string)
+                    
+                    time = float(root.find('IPOC').text) / 1000.0
+                    pos = root.find('RIst')
+                    joint = root.find('AIPos')
+                    
+                    data_row = {
+                        'Time': time,
+                        'Pos_X': float(pos.get('X')),
+                        'Pos_Y': float(pos.get('Y')),
+                        'Pos_Z': float(pos.get('Z')),
+                        'J1': float(joint.get('A1')),
+                        'J2': float(joint.get('A2')),
+                        'J3': float(joint.get('A3')),
+                        'J4': float(joint.get('A4')),
+                        'J5': float(joint.get('A5')),
+                        'J6': float(joint.get('A6')),
+                    }
                     parsed_data_list.append(data_row)
             
             if not parsed_data_list:
                 error_message = "Impossible de trouver des données valides dans le fichier .log"
                 return None, error_message
             
-            df_columns = ['Pos_X', 'Pos_Y', 'Pos_Z', 'J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'Time']
+            df_columns = ['Time', 'Pos_X', 'Pos_Y', 'Pos_Z', 'J1', 'J2', 'J3', 'J4', 'J5', 'J6']
             df = pd.DataFrame(parsed_data_list, columns=df_columns)
             
             times = df['Time'].values
@@ -125,7 +140,6 @@ def parse_uploaded_contents(contents, filename):
             }
 
         elif 'xml' in filename:
-            # Traitement des fichiers XML (l'ancienne version)
             root = ET.fromstring(decoded)
             data_dict = {}
             for child in root:
