@@ -5,7 +5,7 @@ import json
 import requests
 import numpy as np
 import dash
-from dash import dcc, html, Input, Output, State # State a été ajouté ici
+from dash import dcc, html, Input, Output, State
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import dash_bootstrap_components as dbc
@@ -105,6 +105,7 @@ def update_graphs(simulation_filename):
 
         # --- GRAPH A : Tracé 3D coloré par l'axe sollicité (avec survol) ---
         fig_sollicitation = go.Figure()
+        # NOUVEAU : On vérifie l'existence des données avant de tracer
         if 'tcp_positions' in data and data['tcp_positions'] and 'most_solicited_joint' in data and data['most_solicited_joint']:
             path_data = np.array(data['tcp_positions'])
             most_solicited = np.array(data['most_solicited_joint'])
@@ -215,6 +216,7 @@ def update_graphs(simulation_filename):
             shared_xaxes=True,
             subplot_titles=(["Vitesse TCP"] + [f"Vitesse Axe {i+1}" for i in range(num_joints)])
         )
+        # NOUVEAU : On vérifie l'existence des données avant de tracer
         if 'timeseries' in data and data['timeseries']:
             fig_vitesse_temps.add_trace(go.Scatter(x=df['Time'], y=df['TCP_Speed'], name="TCP"), row=1, col=1)
 
@@ -235,6 +237,7 @@ def update_graphs(simulation_filename):
 
         # --- NOUVEAU GRAPH D : Vitesse TCP en fonction de la distance ---
         fig_vitesse_distance = go.Figure()
+        # NOUVEAU : On vérifie l'existence des données avant de tracer
         if 'tcp_positions' in data and data['tcp_positions'] and 'timeseries' in data and data['timeseries']:
             path_data = np.array(data['tcp_positions'])
             tcp_speeds = df['TCP_Speed']
@@ -269,6 +272,7 @@ def update_graphs(simulation_filename):
 
         # --- GRAPH E : Déplacement angulaire total ---
         fig_cumul = go.Figure()
+        # NOUVEAU : On vérifie l'existence des données avant de tracer
         if 'total_travel' in data and data['total_travel']:
             total_travel_data = data['total_travel']
             axis_labels = [f'Axe {i+1}' for i in range(len(total_travel_data))]
@@ -279,6 +283,9 @@ def update_graphs(simulation_filename):
                 textposition='auto'
             ))
             fig_cumul.update_layout(title_text="Déplacement Angulaire Total")
+        else:
+            fig_cumul.add_annotation(text="Pas de données de déplacement d'axe pour cette simulation.", showarrow=False)
+            fig_cumul.update_layout(title_text="Déplacement Angulaire Total", height=450)
 
         return html.Div([
             html.H2(f"Analyse de : {simulation_filename}"),
