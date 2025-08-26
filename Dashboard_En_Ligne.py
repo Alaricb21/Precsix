@@ -71,40 +71,38 @@ def parse_uploaded_contents(contents, filename):
             log_text = decoded.decode('utf-8')
             parsed_data_list = []
             
-            robot_data_pattern = re.compile(
-                r'<Rob.*?</Rob>'
-            )
-
+            # Correction : L'analyseur XML ne s'applique qu'aux lignes valides
             for line in log_text.splitlines():
-                match = robot_data_pattern.search(line)
-                if match:
-                    xml_string = match.group(0)
-                    root = ET.fromstring(xml_string)
-                    
-                    time = float(root.find('IPOC').text) / 1000.0
-                    pos = root.find('RIst')
-                    joint = root.find('AIPos')
-                    
-                    data_row = {
-                        'Time': time,
-                        'Pos_X': float(pos.get('X')),
-                        'Pos_Y': float(pos.get('Y')),
-                        'Pos_Z': float(pos.get('Z')),
-                        'J1': float(joint.get('A1')),
-                        'J2': float(joint.get('A2')),
-                        'J3': float(joint.get('A3')),
-                        'J4': float(joint.get('A4')),
-                        'J5': float(joint.get('A5')),
-                        'J6': float(joint.get('A6')),
-                    }
-                    parsed_data_list.append(data_row)
+                if line.strip().startswith('<Rob'):
+                    try:
+                        root = ET.fromstring(line.strip())
+                        
+                        time = float(root.find('IPOC').text) / 1000.0
+                        pos = root.find('RIst')
+                        joint = root.find('AIPos')
+                        
+                        data_row = {
+                            'Time': time,
+                            'Pos_X': float(pos.get('X')),
+                            'Pos_Y': float(pos.get('Y')),
+                            'Pos_Z': float(pos.get('Z')),
+                            'J1': float(joint.get('A1')),
+                            'J2': float(joint.get('A2')),
+                            'J3': float(joint.get('A3')),
+                            'J4': float(joint.get('A4')),
+                            'J5': float(joint.get('A5')),
+                            'J6': float(joint.get('A6')),
+                        }
+                        parsed_data_list.append(data_row)
+                    except Exception as e:
+                        # Ignorer les lignes XML mal formées
+                        continue
             
             if not parsed_data_list:
                 error_message = "Impossible de trouver des données valides dans le fichier .log"
                 return None, error_message
             
-            df_columns = ['Time', 'Pos_X', 'Pos_Y', 'Pos_Z', 'J1', 'J2', 'J3', 'J4', 'J5', 'J6']
-            df = pd.DataFrame(parsed_data_list, columns=df_columns)
+            df = pd.DataFrame(parsed_data_list)
             
             times = df['Time'].values
             positions_np = df[['Pos_X', 'Pos_Y', 'Pos_Z']].values
@@ -140,6 +138,7 @@ def parse_uploaded_contents(contents, filename):
             }
 
         elif 'xml' in filename:
+            # Traitement des fichiers XML (l'ancienne version)
             root = ET.fromstring(decoded)
             data_dict = {}
             for child in root:
