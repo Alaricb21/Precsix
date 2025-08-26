@@ -71,8 +71,9 @@ def parse_uploaded_contents(contents, filename):
             log_text = decoded.decode('utf-8')
             parsed_data_list = []
             
-            # Correction : Utilisation d'une regex pour extraire le XML où qu'il se trouve sur la ligne
-            robot_data_pattern = re.compile(r'<Rob.*?</Rob>')
+            robot_data_pattern = re.compile(
+                r'<Rob.*?</Rob>'
+            )
 
             for line in log_text.splitlines():
                 match = robot_data_pattern.search(line)
@@ -162,10 +163,58 @@ def parse_uploaded_contents(contents, filename):
                 'total_travel': total_travel,
                 'commanded_tcp_speeds': [5, 16.67, 100],
             }
-
+        
+        # NOUVEAU : Traitement des fichiers JSON de log
         elif 'json' in filename:
-            data = json.loads(decoded)
+            json_data = json.loads(decoded)
             
+            # On suppose que le JSON est une liste d'objets, comme dans votre log
+            if isinstance(json_data, list) and all(isinstance(item, dict) for item in json_data):
+                df = pd.DataFrame(json_data)
+                
+                # S'assurer que les clés nécessaires sont présentes
+                if not all(k in df.columns for k in ['IPOC', 'RIst', 'AIPos']):
+                    error_message = "Clés de données manquantes dans le JSON."
+                    return None, error_message
+                
+                # Extraction et calcul des données
+                times = (df['IPOC'] / 1000.0).values
+                positions_np = df['RIst'].apply(lambda x: [float(x.get('X')), float(x.get('Y')), float(x.get('Z'))]).values
+                joints_np = df['AIPos'].apply(lambda x: [float(x.get(f'A{i+1}')) for i in range(6)]).values
+                
+                delta_time = np.diff(times)
+                delta_time[delta_time <= 0] = 0.0001
+                
+                delta_dist = np.linalg.norm(np.diff(positions_np, axis=0), axis=1)
+                tcp_speeds = np.divide(delta_dist, delta_time)
+                
+                delta_joints = np.diff(joints_np, axis=0)
+                joint_speeds = np.divide(delta_joints, delta_time[:, np.newaxis])
+                
+                most_solicited_joint = np.argmax(np.abs(joint_speeds), axis=1).tolist()
+                total_travel = np.sum(np.abs(delta_joints), axis=0).tolist()
+                
+                timeseries = pd.DataFrame({
+                    'Time': times[1:],
+                    'TCP_Speed': tcp_speeds,
+                    **{f'J{i+1}_Speed': joint_speeds[:, i] for i in range(joints_np.shape[1])}
+                }).to_dict('records')
+                
+                tcp_positions = positions_np.tolist()
+                num_joints = joints_np.shape[1]
+                
+                data = {
+                    'timeseries': timeseries,
+                    'tcp_positions': tcp_positions,
+                    'most_solicited_joint': most_solicited_joint,
+                    'total_travel': total_travel,
+                    'commanded_tcp_speeds': [5, 16.67, 100],
+                }
+
+            else:
+                # Si le JSON est au format RoboDK classique
+                data = json_data
+
         else:
             error_message = "Format de fichier non pris en charge."
             return None, error_message
