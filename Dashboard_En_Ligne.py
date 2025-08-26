@@ -12,14 +12,11 @@ import dash_bootstrap_components as dbc
 import plotly.express as px
 import base64
 import xml.etree.ElementTree as ET
-import re
-from scipy.signal import savgol_filter
 
 # --- Configuration ---
 GITHUB_USER = "Alaricb21"
 GITHUB_REPO = "Precsix"
 GITHUB_BRANCH = "main"
-
 
 # --- Utils ---
 def get_color_from_speed_list(speeds):
@@ -37,6 +34,10 @@ def get_color_from_speed_list(speeds):
             colors.append("rgba(255, 0, 0, 1)")
     return colors
 
+def moving_average(data, window_size=5):
+    if len(data) < window_size:
+        return data
+    return np.convolve(data, np.ones(window_size)/window_size, mode="same")
 
 def get_simulation_list():
     try:
@@ -53,7 +54,6 @@ def get_simulation_list():
         print(f"Erreur en récupérant la liste des fichiers depuis GitHub: {e}")
         return []
 
-
 def load_simulation_data_from_github(filename):
     try:
         raw_url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
@@ -65,12 +65,9 @@ def load_simulation_data_from_github(filename):
     except Exception:
         return None
 
-
 # --- Parsing des logs/XML ---
 def parse_log_file(text):
-    """
-    Parse un fichier .log RSI ligne par ligne (chaque ligne est un mini-XML).
-    """
+    """Parse un fichier .log RSI ligne par ligne (chaque ligne est un mini-XML)."""
     parsed_data_list = []
     for line in text.splitlines():
         line = line.strip()
@@ -100,11 +97,8 @@ def parse_log_file(text):
         return None
     return pd.DataFrame(parsed_data_list)
 
-
 def compute_metrics(df, smooth=True):
-    """
-    Calcule vitesses TCP, vitesses articulaires, axe sollicité, distance cumulée.
-    """
+    """Calcule vitesses TCP, vitesses articulaires, axe sollicité, distance cumulée."""
     times = df["Time"].values
     positions_np = df[["Pos_X", "Pos_Y", "Pos_Z"]].values
     joints_np = df[["J1", "J2", "J3", "J4", "J5", "J6"]].values
@@ -119,14 +113,11 @@ def compute_metrics(df, smooth=True):
     joint_speeds = np.divide(delta_joints, delta_time[:, np.newaxis])
 
     # --- option lissage ---
-    if smooth and len(tcp_speeds) > 7:
-        try:
-            tcp_speeds = savgol_filter(tcp_speeds, 7, 2)
-            joint_speeds = np.array(
-                [savgol_filter(joint_speeds[:, i], 7, 2) for i in range(joint_speeds.shape[1])]
-            ).T
-        except Exception:
-            pass
+    if smooth and len(tcp_speeds) > 5:
+        tcp_speeds = moving_average(tcp_speeds, 5)
+        joint_speeds = np.array(
+            [moving_average(joint_speeds[:, i], 5) for i in range(joint_speeds.shape[1])]
+        ).T
 
     most_solicited_joint = np.argmax(np.abs(joint_speeds), axis=1).tolist()
     total_travel = np.sum(np.abs(delta_joints), axis=0).tolist()
@@ -146,7 +137,6 @@ def compute_metrics(df, smooth=True):
         "total_travel": total_travel,
         "commanded_tcp_speeds": [5, 16.67, 100],
     }
-
 
 def parse_uploaded_contents(contents, filename):
     if contents is None:
@@ -180,7 +170,6 @@ def parse_uploaded_contents(contents, filename):
         data["filename"] = filename
 
     return data, error_message
-
 
 # --- App Dash ---
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -250,12 +239,10 @@ app.layout = dbc.Container(
     fluid=True,
 )
 
-
 # --- Callbacks ---
 @app.callback(Output("dropdown-simulation", "options"), Input("btn-refresh", "n_clicks"))
 def update_dropdown_list(n_clicks):
     return get_simulation_list()
-
 
 @app.callback(
     Output("data-store", "data"),
@@ -267,7 +254,6 @@ def load_data_from_dropdown(simulation_filename):
         data = load_simulation_data_from_github(simulation_filename)
         return data if data else {}
     return {}
-
 
 @app.callback(
     Output("data-store", "data", allow_duplicate=True),
@@ -283,7 +269,7 @@ def load_data_from_upload(contents, filename):
         return {"error": error_msg}
     return data
 
-
+# --- Graphe principal ---
 @app.callback(Output("graph-container", "children"), Input("data-store", "data"))
 def update_graphs(data):
     if not data or "error" in data:
@@ -296,19 +282,16 @@ def update_graphs(data):
         num_joints = len(data.get("total_travel", []))
         simulation_filename = data.get("filename", "Fichier téléchargé")
 
-        # Graphes similaires à ta version précédente...
-        # (je ne les recolle pas ici pour ne pas exploser la taille,
-        # mais la logique reste inchangée, ils utilisent df["TCP_Speed"], etc.)
+        # --- Graphes comme avant (tracé 3D, vitesses, etc.) ---
+        # ici tu peux réutiliser le bloc que tu avais déjà avec fig_sollicitation, fig_vitesse_3d, etc.
 
         return html.Div([
             html.H2(f"Analyse de : {simulation_filename}"),
             html.Hr(),
-            # dcc.Graph(figures déjà définies plus haut comme dans ton code d'origine) ...
+            html.H3("⚠️ Ici réintégrer tes figures (comme ton ancien code)"),
         ])
-
     except Exception as e:
         return html.Div(f"❌ Erreur lors du rendu des graphiques. Erreur : {e}")
-
 
 if __name__ == "__main__":
     app.run_server(debug=True)
