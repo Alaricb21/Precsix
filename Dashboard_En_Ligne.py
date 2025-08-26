@@ -24,15 +24,15 @@ def get_color_from_speed_list(speeds):
     colors = []
     for speed in speeds:
         if speed <= 0.1:
-            colors.append('rgba(0, 0, 255, 1)') # Bleu
+            colors.append('rgba(0, 0, 255, 1)')
         elif speed <= 3:
-            colors.append('rgba(0, 179, 255, 1)') # Bleu clair
+            colors.append('rgba(0, 179, 255, 1)')
         elif speed <= 8:
-            colors.append('rgba(0, 255, 0, 1)') # Vert
+            colors.append('rgba(0, 255, 0, 1)')
         elif speed <= 20:
-            colors.append('rgba(255, 255, 0, 1)') # Jaune
+            colors.append('rgba(255, 255, 0, 1)')
         else:
-            colors.append('rgba(255, 0, 0, 1)') # Rouge
+            colors.append('rgba(255, 0, 0, 1)')
     return colors
 
 def get_simulation_list():
@@ -81,7 +81,7 @@ def parse_uploaded_contents(contents, filename):
                 match = robot_data_pattern.search(line)
                 if match:
                     data_row = [float(val) for val in match.groups()]
-                    data_row[-1] = data_row[-1] / 1000.0 # Conversion de IPOC en secondes
+                    data_row[-1] = data_row[-1] / 1000.0
                     parsed_data_list.append(data_row)
             
             if not parsed_data_list:
@@ -125,7 +125,7 @@ def parse_uploaded_contents(contents, filename):
             }
 
         elif 'xml' in filename:
-            # Logique pour les fichiers XML
+            # Traitement des fichiers XML (l'ancienne version)
             root = ET.fromstring(decoded)
             data_dict = {}
             for child in root:
@@ -149,7 +149,6 @@ def parse_uploaded_contents(contents, filename):
             }
 
         elif 'json' in filename:
-            # Logique pour les fichiers JSON
             data = json.loads(decoded)
             
         else:
