@@ -1,141 +1,23 @@
-import base64
-import io
-import json
-import re
-import xml.etree.ElementTree as ET
+"""
+Dashboard_En_Ligne.py (modifié pour utiliser kuka_log_parser)
 
+Intégration :
+- lorsqu'un .log est uploadé, on parse avec kuka_log_parser.parse_log_text
+- les chemins extraits sont stockés dans dcc.Store('parsed-paths')
+- un dropdown 'tag-dropdown' est rempli avec les clés trouvées
+- un callback trace Time vs valeurs sélectionnées + histogramme
+"""
+import base64
+import re
+import json
 import dash
 from dash import dcc, html, Input, Output, State
 import dash_bootstrap_components as dbc
 import pandas as pd
 import numpy as np
 import plotly.graph_objs as go
-import requests
 
-# ----------------------------
-# Fonction utilitaire
-# ----------------------------
-
-def moving_average(data, window_size=5):
-    if len(data) < window_size:
-        return data
-    return np.convolve(data, np.ones(window_size)/window_size, mode="same")
-
-# ----------------------------
-# Parsing des fichiers
-# ----------------------------
-
-def parse_log_file(text):
-    """
-    Parse un fichier .log RSI où chaque ligne DBG contient un bloc XML <Rob>...</Rob>.
-    """
-    parsed_data_list = []
-
-    for line in text.splitlines():
-        # On isole la partie XML entre guillemets si c’est un <Rob>
-        match = re.search(r'DBG\s+"(<Rob.*</Rob>)', line)
-        if not match:
-            continue
-        xml_str = match.group(1)
-        try:
-            root = ET.fromstring(xml_str)
-            ipoc = float(root.find("IPOC").text) / 1000.0
-            pos = root.find("RIst")
-            joints = root.find("AIPos")
-            data_row = {
-                "Time": ipoc,
-                "Pos_X": float(pos.get("X")),
-                "Pos_Y": float(pos.get("Y")),
-                "Pos_Z": float(pos.get("Z")),
-                "J1": float(joints.get("A1")),
-                "J2": float(joints.get("A2")),
-                "J3": float(joints.get("A3")),
-                "J4": float(joints.get("A4")),
-                "J5": float(joints.get("A5")),
-                "J6": float(joints.get("A6")),
-            }
-            parsed_data_list.append(data_row)
-        except Exception:
-            continue
-
-    if not parsed_data_list:
-        return None
-
-    return pd.DataFrame(parsed_data_list)
-
-
-def parse_json_file(content):
-    try:
-        return json.loads(content)
-    except Exception:
-        return None
-
-
-def parse_uploaded_contents(contents, filename):
-    """
-    Gère à la fois les fichiers .json et .log
-    """
-    content_type, content_string = contents.split(",")
-    decoded = base64.b64decode(content_string)
-
-    if filename.endswith(".json"):
-        return parse_json_file(decoded.decode("utf-8")), None
-    elif filename.endswith(".log"):
-        log_text = decoded.decode("utf-8", errors="ignore")
-        df = parse_log_file(log_text)
-        if df is None:
-            return None, "Impossible de parser le .log : aucun bloc <Rob> valide trouvé."
-        return compute_metrics(df, smooth=True), None
-    else:
-        return None, "Format non supporté (utiliser .json ou .log)."
-
-# ----------------------------
-# Calcul des métriques
-# ----------------------------
-
-def compute_metrics(df, smooth=False):
-    times = df["Time"].values
-    positions_np = df[["Pos_X", "Pos_Y", "Pos_Z"]].values
-    joints_np = df[["J1", "J2", "J3", "J4", "J5", "J6"]].values
-
-    delta_time = np.diff(times)
-    delta_time[delta_time <= 0] = 1e-4
-
-    delta_dist = np.linalg.norm(np.diff(positions_np, axis=0), axis=1)
-    tcp_speeds = np.divide(delta_dist, delta_time)
-
-    delta_joints = np.diff(joints_np, axis=0)
-    joint_speeds = np.divide(delta_joints, delta_time[:, np.newaxis])
-
-    # --- option lissage ---
-    if smooth and len(tcp_speeds) > 5:
-        tcp_speeds = moving_average(tcp_speeds, 5)
-        joint_speeds = np.array(
-            [moving_average(joint_speeds[:, i], 5) for i in range(joint_speeds.shape[1])]
-        ).T
-
-    most_solicited_joint = np.argmax(np.abs(joint_speeds), axis=1).tolist()
-    total_travel = np.sum(np.abs(delta_joints), axis=0).tolist()
-
-    timeseries = pd.DataFrame({
-        "Time": times[1:],
-        "TCP_Speed": tcp_speeds,
-        **{f"J{i+1}_Speed": joint_speeds[:, i] for i in range(joints_np.shape[1])}
-    }).to_dict("records")
-
-    tcp_positions = positions_np.tolist()
-
-    return {
-        "timeseries": timeseries,
-        "tcp_positions": tcp_positions,
-        "most_solicited_joint": most_solicited_joint,
-        "total_travel": total_travel,
-        "commanded_tcp_speeds": [5, 16.67, 100],
-    }
-
-# ----------------------------
-# Dash app
-# ----------------------------
+from kuka_log_parser import parse_log_text, build_dataframe_from_paths, _detect_ipoc_key
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
@@ -156,7 +38,12 @@ app.layout = dbc.Container([
                 },
                 multiple=False
             ),
-            html.Div(id="output-upload")
+            html.Br(),
+            html.Div(id="output-upload"),
+            # Stocker les chemins extraits (JSON sérialisable)
+            dcc.Store(id="parsed-paths", storage_type="memory"),
+            # Dropdown pour sélectionner un tag à tracer
+            dcc.Dropdown(id="tag-dropdown", placeholder="Sélectionnez un tag", style={"marginTop": "10px"})
         ], md=3),
 
         dbc.Col(
@@ -170,43 +57,120 @@ app.layout = dbc.Container([
     ])
 ], fluid=True)
 
-# ----------------------------
-# Callbacks
-# ----------------------------
+def parse_uploaded_contents_generic(contents: str, filename: str):
+    """
+    Prend le contenu base64 d'un upload et tente de parser .json ou .log.
+    Retourne (paths_dict_or_None, df_or_None, error_or_None)
+    """
+    if contents is None:
+        return None, None, "No content"
+
+    try:
+        content_type, content_string = contents.split(",", 1)
+        decoded = base64.b64decode(content_string)
+    except Exception as e:
+        return None, None, f"Erreur de décodage : {e}"
+
+    if filename.endswith(".json"):
+        try:
+            data = json.loads(decoded.decode("utf-8"))
+            return data, None, None
+        except Exception as e:
+            return None, None, f"Impossible de parser le JSON : {e}"
+
+    if filename.endswith(".log"):
+        text = decoded.decode("utf-8", errors="ignore")
+        paths = parse_log_text(text)
+        if not paths:
+            return None, None, "Aucune trame XML valide trouvée dans le .log."
+        ipoc = _detect_ipoc_key(paths)
+        df = build_dataframe_from_paths(paths, time_key=ipoc)
+        # Convertir paths en plain dict pour JSON (listes simples)
+        paths_plain = {k: [float(x) for x in v] for k, v in paths.items()}
+        return paths_plain, df, None
+
+    return None, None, "Format non supporté (utiliser .json ou .log)."
 
 @app.callback(
-    [Output("graph-container", "children"),
-     Output("output-upload", "children")],
-    [Input("upload-data", "contents")],
-    [State("upload-data", "filename")]
+    Output("parsed-paths", "data"),
+    Output("tag-dropdown", "options"),
+    Output("tag-dropdown", "value"),
+    Output("output-upload", "children"),
+    Input("upload-data", "contents"),
+    State("upload-data", "filename")
 )
-def update_output(contents, filename):
-    if contents is not None:
-        data, error = parse_uploaded_contents(contents, filename)
-        if error:
-            return None, html.Div(error, style={"color": "red"})
-        if data is None:
-            return None, html.Div("❌ Impossible de parser le fichier", style={"color": "red"})
+def handle_upload(contents, filename):
+    if contents is None:
+        return dash.no_update, dash.no_update, dash.no_update, ""
+    paths, df, err = parse_uploaded_contents_generic(contents, filename)
+    if err:
+        return None, [], None, html.Div(err, style={"color": "red"})
+    # Préparer options dropdown
+    options = [{"label": k, "value": k} for k in sorted(paths.keys())]
+    # Par défaut -> sélectionner une clé représentative (p.ex. IPOC si présent ou première clé)
+    default_value = None
+    # essayer de détecter une clé comportant 'RIst' ou 'J1' etc. sinon laisser None
+    for preferred in ["RIst", "AIPos", "J1", "ipoc"]:
+        for k in paths.keys():
+            if preferred.lower() in k.lower():
+                default_value = k
+                break
+        if default_value:
+            break
+    if not default_value and options:
+        default_value = options[0]["value"]
+    # Stocker paths et dataframe (df serializable ? on stocke pas df complet pour éviter pb : juste indicateur)
+    store = {"paths": paths}
+    return store, options, default_value, html.Div(f"✅ Fichier {filename} chargé avec succès ({len(paths)} tags trouvés)")
 
-        # Graphes
-        times = [d["Time"] for d in data["timeseries"]]
-        tcp_speed = [d["TCP_Speed"] for d in data["timeseries"]]
+@app.callback(
+    Output("graph-container", "children"),
+    Input("tag-dropdown", "value"),
+    State("parsed-paths", "data")
+)
+def update_graph(selected_tag, store):
+    if not store or not selected_tag:
+        return html.Div("Aucun tag sélectionné.")
+    paths = store.get("paths", {})
+    if selected_tag not in paths:
+        return html.Div("Tag introuvable dans les données.")
 
-        graphs = [
-            dcc.Graph(
-                figure=go.Figure(
-                    data=[go.Scatter(x=times, y=tcp_speed, mode="lines", name="Vitesse TCP")]
-                ).update_layout(title="Vitesse TCP en fonction du temps")
-            )
-        ]
+    values = paths[selected_tag]
+    if not values:
+        return html.Div("Le tag sélectionné ne contient pas de valeurs numériques.")
 
-        return graphs, html.Div(f"✅ Fichier {filename} chargé avec succès")
+    # Tenter de récupérer Time si présence d'une clé IPOC
+    ipoc_key = None
+    for k in paths:
+        if "ipoc" in k.lower():
+            ipoc_key = k
+            break
 
-    return None, None
+    if ipoc_key:
+        time = paths[ipoc_key][:len(values)]
+        # tenter conversion automatique selon ordre de grandeur
+        avg = sum(abs(x) for x in time) / max(1, len(time))
+        if avg > 1e6:
+            time = [x / 1e6 for x in time]
+        elif avg > 1e3:
+            time = [x / 1e3 for x in time]
+    else:
+        time = list(range(len(values)))
 
-# ----------------------------
-# Main
-# ----------------------------
+    # Figure composée : ligne + histogramme
+    fig_line = go.Figure()
+    fig_line.add_trace(go.Scatter(x=time, y=values, mode="lines+markers", name=selected_tag))
+    fig_line.update_layout(title=f"{selected_tag} - Série temporelle", xaxis_title="Time (s)" if ipoc_key else "Index", height=420)
+
+    fig_hist = go.Figure()
+    fig_hist.add_trace(go.Histogram(x=values, marker=dict(line=dict(width=1, color="white"), color="#1f77b4")))
+    fig_hist.update_layout(title=f"{selected_tag} - Histogramme", height=420, margin=dict(t=40))
+
+    # Retourner deux graphes empilés
+    return html.Div([
+        dcc.Graph(figure=fig_line),
+        dcc.Graph(figure=fig_hist)
+    ])
 
 if __name__ == "__main__":
     app.run_server(debug=True)
