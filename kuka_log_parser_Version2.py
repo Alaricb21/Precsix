@@ -12,7 +12,7 @@ from typing import DefaultDict, Dict, List, Optional
 import pandas as pd
 import math
 
-_XML_QUOTED_PATTERN = re.compile(r'"(<.*?>.*)"')
+_XML_QUOTED_PATTERN = re.compile(r'"(<.*>.*)"')
 
 def _is_number(s: str) -> bool:
     try:
