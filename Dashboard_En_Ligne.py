@@ -11,7 +11,6 @@ Remplacez ce fichier dans votre repo pour avoir l'intégration.
 import base64
 import json
 import re
-import xml.etree.ElementTree as ET
 import requests
 from collections import defaultdict
 
@@ -134,7 +133,10 @@ app.layout = dbc.Container([
 
             html.H5("3) Sélectionner un tag extrait du log (après upload)"),
             dcc.Dropdown(id="tag-dropdown", placeholder="Sélectionnez un tag", style={"marginTop": "10px"}),
-            html.Div(id="info-parsed", style={"marginTop": "6px", "fontSize": "0.9em", "color": "#555"})
+            html.Div(id="info-parsed", style={"marginTop": "6px", "fontSize": "0.9em", "color": "#555"}),
+
+            # STORE : stocke soit {"paths": {...}} pour un log, soit {"simulation_json": {...}} pour JSON uploadé
+            dcc.Store(id="parsed-paths", storage_type="memory")
         ], md=3, className="bg-light p-3 rounded"),
 
         dbc.Col([
@@ -151,22 +153,6 @@ app.layout = dbc.Container([
 )
 def update_dropdown_list(n_clicks):
     return get_simulation_list()
-
-@app.callback(
-    Output("tag-dropdown", "options"),
-    Output("tag-dropdown", "value"),
-    Output("parsed-paths", "data") if False else Output("info-parsed", "children"),  # placeholder pour type-checking visuel
-    Input("upload-data", "contents"),
-    State("upload-data", "filename")
-)
-def handle_upload_placeholder(contents, filename):
-    """
-    Ceci est un placeholder pour la doc : le vrai callback handle_upload
-    est défini plus bas et met à jour parsed-paths. Dash n'autorise pas
-    deux callbacks avec mêmes Outputs, donc on implémente handle_upload réel après.
-    """
-    # non utilisé ; le vrai upload est géré par handle_upload ci-dessous
-    return dash.no_update, dash.no_update, dash.no_update
 
 # Réel callback d'upload (met à jour parsed-paths store et le dropdown des tags)
 @app.callback(
